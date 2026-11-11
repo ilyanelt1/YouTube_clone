@@ -1,0 +1,5 @@
+---
+description: Testing requirements
+alwaysApply: true
+---
+Add pytest coverage for critical behavior and security boundaries. Run relevant tests and report exact results. Never claim tests passed unless executed. Include negative authorization cases.

@@ -1,0 +1,5 @@
+---
+description: Security requirements
+alwaysApply: true
+---
+Never commit secrets. Hash passwords with Argon2. Enforce authorization server-side. Keep private media in private buckets and authorize before issuing short-lived signed URLs. Validate upload size and actual media format. Never log passwords, tokens or signed URLs.
