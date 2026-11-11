@@ -1,0 +1,5 @@
+---
+description: Project architecture constraints
+alwaysApply: true
+---
+Use a modular monolith for FastAPI and a separate worker for media processing. PostgreSQL stores metadata; MinIO stores media. Keep routes thin and business rules in services. Use Alembic for schema changes. No microservices without an explicit architecture decision.
