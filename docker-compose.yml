@@ -32,6 +32,10 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports: ["8000:8000"]
     depends_on: [db]
+  frontend:
+    build: ./frontend
+    ports: ["8080:80"]
+    depends_on: [backend]
 volumes:
   postgres_data:
   minio_data:
