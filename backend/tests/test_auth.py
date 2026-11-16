@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -228,7 +229,7 @@ def test_inactive_user_cannot_login_or_refresh() -> None:
         user_id = registration.json()["user"]["id"]
 
         with factory() as db:
-            user = db.get(User, user_id)
+            user = db.get(User, UUID(user_id))
             assert user is not None
             user.is_active = False
             db.commit()
