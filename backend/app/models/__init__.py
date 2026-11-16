@@ -8,7 +8,6 @@ import sqlalchemy.orm as orm
 
 from app.db.base import Base
 
-
 user_roles = sa.Table(
     "user_roles",
     Base.metadata,

@@ -1,7 +1,6 @@
 import sqlalchemy as sa
 import sqlalchemy.orm as orm
 
-
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
