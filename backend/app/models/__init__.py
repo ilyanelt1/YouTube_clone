@@ -201,9 +201,7 @@ class AuthSession(Base):
         sa.Index("ix_auth_sessions_expires_at", "expires_at"),
     )
 
-    id: orm.Mapped[UUID] = orm.mapped_column(
-        sa.Uuid(as_uuid=True), primary_key=True, default=uuid4
-    )
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
     user_id: orm.Mapped[UUID] = orm.mapped_column(
         sa.Uuid(as_uuid=True),
         sa.ForeignKey("users.id", ondelete="CASCADE"),
@@ -213,9 +211,7 @@ class AuthSession(Base):
     refresh_token_hash: orm.Mapped[str] = orm.mapped_column(
         sa.String(64), unique=True, nullable=False
     )
-    expires_at: orm.Mapped[datetime] = orm.mapped_column(
-        sa.DateTime(timezone=True), nullable=False
-    )
+    expires_at: orm.Mapped[datetime] = orm.mapped_column(sa.DateTime(timezone=True), nullable=False)
     revoked_at: orm.Mapped[datetime | None] = orm.mapped_column(sa.DateTime(timezone=True))
     user_agent: orm.Mapped[str | None] = orm.mapped_column(sa.String(512))
     ip_address: orm.Mapped[str | None] = orm.mapped_column(sa.String(45))
