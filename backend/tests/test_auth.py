@@ -61,6 +61,8 @@ def test_register_login_refresh_and_logout_flow() -> None:
         with factory() as db:
             user = db.scalar(sa.select(User).where(User.email == "user@example.com"))
             assert user is not None
+            assert user.password_hash.startswith("$argon2")
+            assert user.password_hash != "correct-horse-battery"
             assert password_hasher.verify("correct-horse-battery", user.password_hash)
             stored_session = db.scalar(sa.select(AuthSession).where(AuthSession.user_id == user.id))
             assert stored_session is not None
@@ -89,6 +91,17 @@ def test_register_login_refresh_and_logout_flow() -> None:
             cookies={"youtube_refresh": new_refresh_token},
         )
         assert rejected_refresh.status_code == 401
+
+        logged_in = client.post(
+            "/api/v1/auth/login",
+            json={
+                "identifier": "TEST_USER",
+                "password": "correct-horse-battery",
+            },
+        )
+        assert logged_in.status_code == 200
+        assert logged_in.json()["user"]["id"] == body["user"]["id"]
+        assert "youtube_refresh" in client.cookies
     finally:
         close_client(client, engine)
 
