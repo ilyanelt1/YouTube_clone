@@ -25,7 +25,11 @@ class Settings(BaseSettings):
         secret = self.secret_key.get_secret_value()
         is_production = environment in {"production", "prod", "staging"}
 
-        if is_production and (len(secret) < 32 or secret.startswith("replace-")):
+        if is_production and (
+            len(secret) < 32
+            or secret.startswith("replace-")
+            or secret == "local-development-only-change-this-secret"
+        ):
             raise ValueError("SECRET_KEY must be a unique random value with at least 32 characters")
 
         return self
