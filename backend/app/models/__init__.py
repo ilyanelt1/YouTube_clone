@@ -73,9 +73,7 @@ class Role(Base):
 class Channel(Base):
     __tablename__ = "channels"
 
-    id: orm.Mapped[UUID] = orm.mapped_column(
-        sa.Uuid(as_uuid=True), primary_key=True, default=uuid4
-    )
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
     owner_id: orm.Mapped[UUID] = orm.mapped_column(
         sa.Uuid(as_uuid=True),
         sa.ForeignKey("users.id", ondelete="CASCADE"),
@@ -126,9 +124,7 @@ class Video(Base):
         sa.Index("ix_videos_visibility_published_at", "visibility", "published_at"),
     )
 
-    id: orm.Mapped[UUID] = orm.mapped_column(
-        sa.Uuid(as_uuid=True), primary_key=True, default=uuid4
-    )
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
     channel_id: orm.Mapped[UUID] = orm.mapped_column(
         sa.Uuid(as_uuid=True),
         sa.ForeignKey("channels.id", ondelete="CASCADE"),
