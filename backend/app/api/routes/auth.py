@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -157,8 +157,8 @@ def refresh(
     request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
-    refresh_token: Annotated[str | None, Cookie(alias="youtube_refresh")] = None,
 ) -> TokenResponse:
+    refresh_token = request.cookies.get(get_settings().refresh_cookie_name)
     if not refresh_token:
         raise _unauthorized()
 
@@ -174,10 +174,11 @@ def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
+    request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
-    refresh_token: Annotated[str | None, Cookie(alias="youtube_refresh")] = None,
 ) -> Response:
+    refresh_token = request.cookies.get(get_settings().refresh_cookie_name)
     if refresh_token:
         revoke_refresh_session(db, refresh_token)
     _clear_refresh_cookie(response)
