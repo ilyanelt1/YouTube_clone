@@ -62,9 +62,7 @@ def test_register_login_refresh_and_logout_flow() -> None:
             user = db.scalar(sa.select(User).where(User.email == "user@example.com"))
             assert user is not None
             assert password_hasher.verify("correct-horse-battery", user.password_hash)
-            stored_session = db.scalar(
-                sa.select(AuthSession).where(AuthSession.user_id == user.id)
-            )
+            stored_session = db.scalar(sa.select(AuthSession).where(AuthSession.user_id == user.id))
             assert stored_session is not None
             assert stored_session.refresh_token_hash != registration.cookies["youtube_refresh"]
             assert len(stored_session.refresh_token_hash) == 64
