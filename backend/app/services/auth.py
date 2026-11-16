@@ -72,9 +72,7 @@ def rotate_refresh_session(
 ) -> tuple[User, str] | None:
     token_hash = hash_refresh_token(raw_token)
     auth_session = db.scalar(
-        select(AuthSession)
-        .where(AuthSession.refresh_token_hash == token_hash)
-        .with_for_update()
+        select(AuthSession).where(AuthSession.refresh_token_hash == token_hash).with_for_update()
     )
     if auth_session is None:
         return None
