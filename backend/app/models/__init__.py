@@ -10,7 +10,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    MetaData,
     String,
     Table,
     Text,
@@ -98,9 +97,7 @@ class Video(Base):
             "status IN ('draft', 'uploading', 'processing', 'ready', 'failed', 'blocked')",
             name="valid_status",
         ),
-        CheckConstraint(
-            "visibility IN ('public', 'unlisted', 'private')", name="valid_visibility"
-        ),
+        CheckConstraint("visibility IN ('public', 'unlisted', 'private')", name="valid_visibility"),
         CheckConstraint(
             "duration_seconds IS NULL OR duration_seconds >= 0", name="nonnegative_duration"
         ),

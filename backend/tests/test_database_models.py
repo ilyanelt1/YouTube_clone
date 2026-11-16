@@ -1,6 +1,6 @@
-import app.models  # noqa: F401
 from sqlalchemy.orm import configure_mappers
 
+import app.models  # noqa: F401
 from app.db.base import Base
 
 
