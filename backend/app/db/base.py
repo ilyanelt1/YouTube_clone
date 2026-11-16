@@ -1,5 +1,5 @@
-from sqlalchemy import MetaData
-from sqlalchemy.orm import DeclarativeBase
+import sqlalchemy as sa
+import sqlalchemy.orm as orm
 
 
 NAMING_CONVENTION = {
@@ -11,5 +11,5 @@ NAMING_CONVENTION = {
 }
 
 
-class Base(DeclarativeBase):
-    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+class Base(orm.DeclarativeBase):
+    metadata = sa.MetaData(naming_convention=NAMING_CONVENTION)
