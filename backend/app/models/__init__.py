@@ -25,9 +25,7 @@ user_roles = sa.Table(
 class User(Base):
     __tablename__ = "users"
 
-    id: orm.Mapped[UUID] = orm.mapped_column(
-        sa.Uuid(as_uuid=True), primary_key=True, default=uuid4
-    )
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
     email: orm.Mapped[str] = orm.mapped_column(sa.String(320), unique=True, nullable=False)
     username: orm.Mapped[str] = orm.mapped_column(sa.String(30), unique=True, nullable=False)
     display_name: orm.Mapped[str] = orm.mapped_column(sa.String(80), nullable=False)
@@ -48,9 +46,7 @@ class User(Base):
         onupdate=sa.func.now(),
     )
 
-    roles: orm.Mapped[list[Role]] = orm.relationship(
-        secondary=user_roles, back_populates="users"
-    )
+    roles: orm.Mapped[list[Role]] = orm.relationship(secondary=user_roles, back_populates="users")
     channel: orm.Mapped[Channel | None] = orm.relationship(
         back_populates="owner", cascade="all, delete-orphan", uselist=False
     )
@@ -71,9 +67,7 @@ class Role(Base):
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
 
-    users: orm.Mapped[list[User]] = orm.relationship(
-        secondary=user_roles, back_populates="roles"
-    )
+    users: orm.Mapped[list[User]] = orm.relationship(secondary=user_roles, back_populates="roles")
 
 
 class Channel(Base):
