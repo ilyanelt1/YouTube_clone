@@ -12,6 +12,7 @@ def test_initial_database_tables_are_registered() -> None:
         "channels",
         "videos",
         "video_access_grants",
+        "auth_sessions",
     }
     assert expected.issubset(Base.metadata.tables)
 

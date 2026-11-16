@@ -55,6 +55,9 @@ class User(Base):
         foreign_keys="VideoAccessGrant.user_id",
         cascade="all, delete-orphan",
     )
+    auth_sessions: orm.Mapped[list[AuthSession]] = orm.relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Role(Base):
@@ -190,4 +193,42 @@ class VideoAccessGrant(Base):
     granted_by: orm.Mapped[User | None] = orm.relationship(foreign_keys=[granted_by_id])
 
 
-__all__ = ["Base", "Channel", "Role", "User", "Video", "VideoAccessGrant", "user_roles"]
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        sa.Index("ix_auth_sessions_user_id", "user_id"),
+        sa.Index("ix_auth_sessions_family_id", "family_id"),
+        sa.Index("ix_auth_sessions_expires_at", "expires_at"),
+    )
+
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    family_id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), nullable=False)
+    refresh_token_hash: orm.Mapped[str] = orm.mapped_column(
+        sa.String(64), unique=True, nullable=False
+    )
+    expires_at: orm.Mapped[datetime] = orm.mapped_column(sa.DateTime(timezone=True), nullable=False)
+    revoked_at: orm.Mapped[datetime | None] = orm.mapped_column(sa.DateTime(timezone=True))
+    user_agent: orm.Mapped[str | None] = orm.mapped_column(sa.String(512))
+    ip_address: orm.Mapped[str | None] = orm.mapped_column(sa.String(45))
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+    user: orm.Mapped[User] = orm.relationship(back_populates="auth_sessions")
+
+
+__all__ = [
+    "AuthSession",
+    "Base",
+    "Channel",
+    "Role",
+    "User",
+    "Video",
+    "VideoAccessGrant",
+    "user_roles",
+]
