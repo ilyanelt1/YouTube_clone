@@ -420,6 +420,37 @@ class Notification(Base):
     )
 
 
+
+class VideoReport(Base):
+    __tablename__ = "video_reports"
+    __table_args__ = (
+        sa.CheckConstraint("status IN ('open', 'resolved', 'dismissed')", name="valid_status"),
+        sa.UniqueConstraint("video_id", "reporter_id", name="uq_video_report_reporter"),
+        sa.Index("ix_video_reports_status_created", "status", "created_at"),
+    )
+
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    video_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE"), nullable=False
+    )
+    reporter_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    reason: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    description: orm.Mapped[str | None] = orm.mapped_column(sa.String(1000))
+    status: orm.Mapped[str] = orm.mapped_column(sa.String(20), nullable=False, default="open")
+    reviewed_by_id: orm.Mapped[UUID | None] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewed_at: orm.Mapped[datetime | None] = orm.mapped_column(sa.DateTime(timezone=True))
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    video: orm.Mapped[Video] = orm.relationship()
+    reporter: orm.Mapped[User] = orm.relationship(foreign_keys=[reporter_id])
+    reviewer: orm.Mapped[User | None] = orm.relationship(foreign_keys=[reviewed_by_id])
+
+
 __all__ = [
     "AuthSession",
     "ChannelSubscription",
@@ -438,5 +469,6 @@ __all__ = [
     "Playlist",
     "Notification",
     "VideoAccessGrant",
+    "VideoReport",
     "user_roles",
 ]
