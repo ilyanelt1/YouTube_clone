@@ -1,6 +1,6 @@
 import re
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import (
@@ -15,12 +15,12 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
-from app.models import Channel, User, Video
+from app.models import Channel, ChannelSubscription, Notification, User, Video
 from app.schemas.video import VideoList, VideoRead, VideoUpdate
 from app.services.storage import (
     delete_object,
@@ -161,19 +161,37 @@ def _delete_storage_object(object_key: str | None) -> None:
 def list_videos(
     db: Annotated[Session, Depends(get_db)],
     q: Annotated[str | None, Query(max_length=120)] = None,
+    channel: Annotated[str | None, Query(max_length=30)] = None,
+    sort: Literal["newest", "oldest", "popular"] = "newest",
+    duration: Literal["short", "long"] | None = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 24,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VideoList:
-    filters = [
-        Video.status == "ready",
-        Video.visibility == "public",
-    ]
-    statement = select(Video).join(Channel).where(*filters).order_by(Video.created_at.desc())
+    filters = [Video.status == "ready", Video.visibility == "public"]
+    statement = select(Video).join(Channel).where(*filters)
     count_statement = select(func.count(Video.id)).join(Channel).where(*filters)
-    if q:
+    if q and q.strip():
         pattern = f"%{q.strip()}%"
-        statement = statement.where(Video.title.ilike(pattern))
-        count_statement = count_statement.where(Video.title.ilike(pattern))
+        search_filter = or_(Video.title.ilike(pattern), Video.description.ilike(pattern))
+        statement = statement.where(search_filter)
+        count_statement = count_statement.where(search_filter)
+    if channel:
+        statement = statement.where(Channel.handle == channel)
+        count_statement = count_statement.where(Channel.handle == channel)
+    if duration == "short":
+        duration_filter = Video.duration_seconds < 240
+        statement = statement.where(duration_filter)
+        count_statement = count_statement.where(duration_filter)
+    elif duration == "long":
+        duration_filter = Video.duration_seconds >= 240
+        statement = statement.where(duration_filter)
+        count_statement = count_statement.where(duration_filter)
+    if sort == "popular":
+        statement = statement.order_by(Video.view_count.desc(), Video.created_at.desc())
+    elif sort == "oldest":
+        statement = statement.order_by(Video.created_at.asc())
+    else:
+        statement = statement.order_by(Video.created_at.desc())
     videos = db.scalars(statement.offset(offset).limit(limit)).unique().all()
     return VideoList(
         items=[_video_read(video) for video in videos], total=db.scalar(count_statement) or 0
@@ -258,6 +276,27 @@ def upload_video_endpoint(
         db.add(video)
         db.commit()
         db.refresh(video)
+        if visibility == "public":
+            subscriber_ids = db.scalars(
+                select(ChannelSubscription.subscriber_id).where(
+                    ChannelSubscription.channel_id == channel.id,
+                    ChannelSubscription.subscriber_id != current_user.id,
+                )
+            ).all()
+            db.add_all(
+                [
+                    Notification(
+                        recipient_id=subscriber_id,
+                        actor_id=current_user.id,
+                        video_id=video.id,
+                        kind="new_video",
+                        message=f"{channel.name} опубликовал(а) новое видео: {clean_title}",
+                    )
+                    for subscriber_id in subscriber_ids
+                ]
+            )
+            if subscriber_ids:
+                db.commit()
     except Exception as exc:
         db.rollback()
         if video_uploaded:
