@@ -268,7 +268,10 @@ class Comment(Base):
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
     updated_at: orm.Mapped[datetime] = orm.mapped_column(
-        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now()
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
     )
     author: orm.Mapped[User] = orm.relationship()
 
