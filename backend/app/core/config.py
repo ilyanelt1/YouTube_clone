@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     s3_secret_key: SecretStr = SecretStr("change-this-minio-password")
 
     @model_validator(mode="after")
-    def validate_secret_key(self) -> "Settings":
+    def validate_secret_key(self) -> Settings:
         environment = self.app_env.casefold()
         secret = self.secret_key.get_secret_value()
         is_production = environment in {"production", "prod", "staging"}
