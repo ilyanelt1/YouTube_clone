@@ -14,12 +14,12 @@ from app.models import (
     ChannelSubscription,
     Comment,
     Notification,
-    VideoViewHistory,
     User,
     Video,
     VideoReaction,
     VideoRepost,
     VideoShare,
+    VideoViewHistory,
 )
 
 router = APIRouter(tags=["social"])
