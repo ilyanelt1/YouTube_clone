@@ -144,12 +144,9 @@ def _get_accessible_video(
     if video is None:
         raise HTTPException(status_code=404, detail="Video not found")
     if video.visibility == "private":
-        has_access = (
-            current_user is not None
-            and (
-                video.channel.owner_id == current_user.id
-                or db.get(VideoAccessGrant, (video.id, current_user.id)) is not None
-            )
+        has_access = current_user is not None and (
+            video.channel.owner_id == current_user.id
+            or db.get(VideoAccessGrant, (video.id, current_user.id)) is not None
         )
         if not has_access:
             raise HTTPException(status_code=404, detail="Video not found")
@@ -383,9 +380,9 @@ def list_video_access_grants(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict]:
-    video = db.scalar(select(Video).join(Channel).where(
-        Video.id == video_id, Channel.owner_id == current_user.id
-    ))
+    video = db.scalar(
+        select(Video).join(Channel).where(Video.id == video_id, Channel.owner_id == current_user.id)
+    )
     if video is None or video.visibility != "private":
         raise HTTPException(status_code=404, detail="Приватное видео не найдено")
     grants = db.scalars(select(VideoAccessGrant).where(VideoAccessGrant.video_id == video.id)).all()
@@ -408,13 +405,17 @@ def grant_video_access(
     ))
     if video is None or video.visibility != "private":
         raise HTTPException(status_code=404, detail="Приватное видео не найдено")
-    target = db.scalar(select(User).where(func.lower(User.username) == payload.username.strip().casefold()))
+    target = db.scalar(
+        select(User).where(func.lower(User.username) == payload.username.strip().casefold())
+    )
     if target is None or not target.is_active:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     if target.id == current_user.id:
         raise HTTPException(status_code=400, detail="Владелец уже имеет доступ")
     if db.get(VideoAccessGrant, (video.id, target.id)) is None:
-        db.add(VideoAccessGrant(video_id=video.id, user_id=target.id, granted_by_id=current_user.id))
+        db.add(
+            VideoAccessGrant(video_id=video.id, user_id=target.id, granted_by_id=current_user.id)
+        )
         db.commit()
     return {"video_id": str(video.id), "user_id": str(target.id), "username": target.username}
 
