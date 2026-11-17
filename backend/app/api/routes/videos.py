@@ -1,19 +1,18 @@
+import re
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Annotated
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.config import get_settings
 from app.db.session import get_db
 from app.models import Channel, User, Video
 from app.schemas.video import VideoList, VideoRead
-from app.services.storage import create_playback_url, upload_video
+from app.services.storage import get_video_object, upload_video
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 ALLOWED_VIDEO_TYPES = {
@@ -27,11 +26,7 @@ MAX_VIDEO_SIZE = 500 * 1024 * 1024
 def _ensure_channel(db: Session, user: User) -> Channel:
     channel = db.scalar(select(Channel).where(Channel.owner_id == user.id))
     if channel is None:
-        channel = Channel(
-            owner_id=user.id,
-            handle=user.username,
-            name=user.display_name,
-        )
+        channel = Channel(owner_id=user.id, handle=user.username, name=user.display_name)
         db.add(channel)
         db.flush()
     return channel
@@ -62,17 +57,9 @@ def list_videos(
     limit: Annotated[int, Query(ge=1, le=50)] = 24,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VideoList:
-    statement = (
-        select(Video)
-        .join(Channel)
-        .where(Video.status == "ready", Video.visibility == "public")
-        .order_by(Video.created_at.desc())
-    )
-    count_statement = (
-        select(func.count(Video.id))
-        .join(Channel)
-        .where(Video.status == "ready", Video.visibility == "public")
-    )
+    filters = [Video.status == "ready", Video.visibility == "public"]
+    statement = select(Video).join(Channel).where(*filters).order_by(Video.created_at.desc())
+    count_statement = select(func.count(Video.id)).join(Channel).where(*filters)
     if q:
         pattern = f"%{q.strip()}%"
         statement = statement.where(Video.title.ilike(pattern))
@@ -118,15 +105,15 @@ def upload_video_endpoint(
         db.add(video)
         db.commit()
         db.refresh(video)
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=502, detail="Video storage is temporarily unavailable")
+        raise HTTPException(status_code=502, detail="Video storage is temporarily unavailable") from exc
     return _video_read(video)
 
 
 @router.get("/{video_id}", response_model=VideoRead)
 def get_video(
-    video_id: str,
+    video_id: UUID,
     db: Annotated[Session, Depends(get_db)],
 ) -> VideoRead:
     video = db.scalar(
@@ -143,9 +130,10 @@ def get_video(
 
 @router.get("/{video_id}/play")
 def play_video(
-    video_id: str,
+    video_id: UUID,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
-) -> RedirectResponse:
+) -> StreamingResponse:
     video = db.scalar(
         select(Video).where(
             Video.id == video_id,
@@ -155,8 +143,52 @@ def play_video(
     )
     if video is None or not video.storage_key:
         raise HTTPException(status_code=404, detail="Video not found")
+
+    range_header = request.headers.get("range")
+    byte_range = None
+    status_code = status.HTTP_200_OK
+    headers = {"Accept-Ranges": "bytes"}
     try:
-        url = create_playback_url(video.storage_key)
+        total_size = video.file_size_bytes
+        if range_header:
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+            if not match or total_size is None:
+                raise HTTPException(status_code=416, detail="Invalid byte range")
+            start_text, end_text = match.groups()
+            if start_text:
+                start = int(start_text)
+                end = int(end_text) if end_text else total_size - 1
+            else:
+                suffix_length = int(end_text)
+                start = max(total_size - suffix_length, 0)
+                end = total_size - 1
+            if start >= total_size or end < start:
+                raise HTTPException(
+                    status_code=416,
+                    detail="Requested range is not satisfiable",
+                    headers={"Content-Range": f"bytes */{total_size}"},
+                )
+            end = min(end, total_size - 1)
+            byte_range = f"bytes={start}-{end}"
+            status_code = status.HTTP_206_PARTIAL_CONTENT
+            headers["Content-Range"] = f"bytes {start}-{end}/{total_size}"
+            headers["Content-Length"] = str(end - start + 1)
+
+        result = get_video_object(video.storage_key, byte_range)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Video playback is temporarily unavailable") from exc
-    return RedirectResponse(url=url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+    if total_size is None:
+        total_size = result["TotalLength"]
+    headers["Content-Type"] = result.get("ContentType") or video.mime_type or "application/octet-stream"
+    if not range_header:
+        headers["Content-Length"] = str(total_size)
+    body = result["Body"]
+    return StreamingResponse(
+        body.iter_chunks(chunk_size=1024 * 1024),
+        status_code=status_code,
+        headers=headers,
+        media_type=None,
+    )
