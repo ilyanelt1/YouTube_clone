@@ -79,7 +79,9 @@ def _validate_video(file: UploadFile) -> tuple[str, str, int]:
     if (content_type in {"video/mp4", "video/quicktime"} and not is_mp4) or (
         content_type == "video/webm" and not is_webm
     ):
-        raise HTTPException(status_code=415, detail="The file content does not match its video format")
+        raise HTTPException(
+            status_code=415, detail="The file content does not match its video format"
+        )
     return content_type, extension, size
 
 
@@ -100,10 +102,16 @@ def _validate_thumbnail(file: UploadFile) -> tuple[str, str, int]:
     valid = (
         (content_type == "image/jpeg" and signature.startswith(b"\xff\xd8\xff"))
         or (content_type == "image/png" and signature.startswith(b"\x89PNG\r\n\x1a\n"))
-        or (content_type == "image/webp" and signature.startswith(b"RIFF") and signature[8:12] == b"WEBP")
+        or (
+            content_type == "image/webp"
+            and signature.startswith(b"RIFF")
+            and signature[8:12] == b"WEBP"
+        )
     )
     if not valid:
-        raise HTTPException(status_code=415, detail="The thumbnail content does not match its image format")
+        raise HTTPException(
+            status_code=415, detail="The thumbnail content does not match its image format"
+        )
     return content_type, extension, size
 
 
@@ -131,9 +139,7 @@ def _get_accessible_video(
     db: Session,
     current_user: User | None,
 ) -> Video:
-    video = db.scalar(
-        select(Video).where(Video.id == video_id, Video.status == "ready")
-    )
+    video = db.scalar(select(Video).where(Video.id == video_id, Video.status == "ready"))
     if video is None:
         raise HTTPException(status_code=404, detail="Video not found")
     if video.visibility == "private" and (
@@ -212,7 +218,9 @@ def upload_video_endpoint(
     if not clean_title:
         raise HTTPException(status_code=422, detail="Title cannot be empty")
     if visibility not in {"public", "unlisted", "private"}:
-        raise HTTPException(status_code=422, detail="Visibility must be public, unlisted or private")
+        raise HTTPException(
+            status_code=422, detail="Visibility must be public, unlisted or private"
+        )
 
     content_type, extension, video_size = _validate_video(file)
     thumbnail_metadata = _validate_thumbnail(thumbnail) if thumbnail is not None else None
@@ -270,9 +278,7 @@ def update_video(
     db: Annotated[Session, Depends(get_db)],
 ) -> VideoRead:
     video = db.scalar(
-        select(Video)
-        .join(Channel)
-        .where(Video.id == video_id, Channel.owner_id == current_user.id)
+        select(Video).join(Channel).where(Video.id == video_id, Channel.owner_id == current_user.id)
     )
     if video is None:
         raise HTTPException(status_code=404, detail="Video not found")
