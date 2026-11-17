@@ -16,7 +16,9 @@ router = APIRouter(prefix="/moderation", tags=["moderation"])
 
 
 class ReportCreate(BaseModel):
-    reason: Literal["spam", "copyright", "harassment", "violence", "adult", "misinformation", "other"]
+    reason: Literal[
+        "spam", "copyright", "harassment", "violence", "adult", "misinformation", "other"
+    ]
     description: str | None = Field(default=None, max_length=1000)
 
 
@@ -51,7 +53,9 @@ def create_report(
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Вы уже отправляли жалобу на это видео") from exc
+        raise HTTPException(
+            status_code=409, detail="Вы уже отправляли жалобу на это видео"
+        ) from exc
     db.refresh(report)
     return {
         "id": str(report.id),
@@ -66,7 +70,9 @@ def create_report(
 def list_reports(
     current_user: Annotated[User, Depends(require_roles("moderator", "admin"))],
     db: Annotated[Session, Depends(get_db)],
-    report_status: Literal["open", "resolved", "dismissed"] | None = Query(default="open", alias="status"),
+    report_status: Literal["open", "resolved", "dismissed"] | None = Query(
+        default="open", alias="status"
+    ),
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> list[dict]:
     statement = select(VideoReport).options(
@@ -75,7 +81,9 @@ def list_reports(
     )
     if report_status is not None:
         statement = statement.where(VideoReport.status == report_status)
-    reports = db.scalars(statement.order_by(VideoReport.created_at.asc()).limit(limit)).unique().all()
+    reports = (
+        db.scalars(statement.order_by(VideoReport.created_at.asc()).limit(limit)).unique().all()
+    )
     return [
         {
             "id": str(report.id),
@@ -101,7 +109,9 @@ def decide_report(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     report = db.scalar(
-        select(VideoReport).options(joinedload(VideoReport.video)).where(VideoReport.id == report_id)
+        select(VideoReport)
+        .options(joinedload(VideoReport.video))
+        .where(VideoReport.id == report_id)
     )
     if report is None:
         raise HTTPException(status_code=404, detail="Жалоба не найдена")
@@ -124,14 +134,24 @@ def list_blocked_videos(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> list[dict]:
-    videos = db.scalars(
-        select(Video).options(joinedload(Video.channel))
-        .where(Video.status == "blocked")
-        .order_by(Video.updated_at.desc())
-        .limit(limit)
-    ).unique().all()
+    videos = (
+        db.scalars(
+            select(Video)
+            .options(joinedload(Video.channel))
+            .where(Video.status == "blocked")
+            .order_by(Video.updated_at.desc())
+            .limit(limit)
+        )
+        .unique()
+        .all()
+    )
     return [
-        {"id": str(video.id), "title": video.title, "channel": video.channel.handle, "visibility": video.visibility}
+        {
+            "id": str(video.id),
+            "title": video.title,
+            "channel": video.channel.handle,
+            "visibility": video.visibility,
+        }
         for video in videos
     ]
 
@@ -158,7 +178,9 @@ def update_user_roles(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     if user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Нельзя изменять собственные роли через этот метод")
+        raise HTTPException(
+            status_code=400, detail="Нельзя изменять собственные роли через этот метод"
+        )
     target = db.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
@@ -167,4 +189,8 @@ def update_user_roles(
         raise HTTPException(status_code=422, detail="Одна или несколько ролей не настроены")
     target.roles = roles
     db.commit()
-    return {"user_id": str(target.id), "username": target.username, "roles": sorted(role.name for role in target.roles)}
+    return {
+        "user_id": str(target.id),
+        "username": target.username,
+        "roles": sorted(role.name for role in target.roles),
+    }
