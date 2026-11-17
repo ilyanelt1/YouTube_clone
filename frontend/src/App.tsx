@@ -133,12 +133,14 @@ export default function App() {
     search = "",
     sort: "newest" | "oldest" | "popular" = "newest",
     duration: "" | "short" | "long" = "",
+    channel: string = "",
   ) => {
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set("q", search.trim());
       params.set("sort", sort);
-      if (duration) params.set("duration", duration);\n      if (channel) params.set("channel", channel);
+      if (duration) params.set("duration", duration);
+      if (channel) params.set("channel", channel);
       const result = await api<{ items: Video[]; total: number }>(`/videos?${params.toString()}`);
       setVideos(result.items);
     } catch (err) {
