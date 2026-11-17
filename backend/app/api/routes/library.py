@@ -181,6 +181,7 @@ def get_watch_history(
 ) -> VideoList:
     access_filter = or_(
         Video.visibility != "private",
+        Channel.owner_id == user.id,
         Video.id.in_(
             select(VideoAccessGrant.video_id).where(VideoAccessGrant.user_id == user.id)
         ),
@@ -193,6 +194,7 @@ def get_watch_history(
     statement = (
         select(Video)
         .join(VideoViewHistory, VideoViewHistory.video_id == Video.id)
+        .join(Channel, Channel.id == Video.channel_id)
         .where(*history_filters)
         .order_by(VideoViewHistory.watched_at.desc())
     )
@@ -200,6 +202,7 @@ def get_watch_history(
         db.scalar(
             select(func.count(Video.id))
             .join(VideoViewHistory, VideoViewHistory.video_id == Video.id)
+            .join(Channel, Channel.id == Video.channel_id)
             .where(*history_filters)
         )
         or 0
