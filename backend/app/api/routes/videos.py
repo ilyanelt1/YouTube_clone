@@ -159,6 +159,12 @@ def play_video(
                 start = int(start_text)
                 end = int(end_text) if end_text else total_size - 1
             else:
+                if not end_text or int(end_text) <= 0:
+                    raise HTTPException(
+                        status_code=416,
+                        detail="Invalid byte range",
+                        headers={"Content-Range": f"bytes */{total_size}"},
+                    )
                 suffix_length = int(end_text)
                 start = max(total_size - suffix_length, 0)
                 end = total_size - 1
