@@ -55,7 +55,7 @@ Python 3.14, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 17, boto3, S3-compatible
 
 ### Videos
 - `GET /api/v1/videos` — public feed and search; optional `q`, `channel`, `sort` (`newest`, `oldest`, `popular`), `duration` (`short`, `long`), `limit`, `offset`.
-- `POST /api/v1/videos/upload` — authenticated multipart upload. Required: `title`, `file`; optional: `description`, `visibility` (`public`, `unlisted`, `private`), `thumbnail`.
+- `POST /api/v1/videos/upload` — authenticated multipart upload. Required: `title`, `file`; optional: `description`, `visibility` (`public`, `unlisted`, `private`), `thumbnail`, client-detected `duration_seconds`.
 - `GET /api/v1/videos/mine` — authenticated user's videos.
 - `GET /api/v1/videos/{id}` — video metadata (private videos require the owner session).
 - `GET /api/v1/videos/{id}/play` — streamed playback with HTTP byte-range support.
