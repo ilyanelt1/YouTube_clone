@@ -267,10 +267,13 @@ def get_playlist(
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
     playlist = _playlist_access(playlist_id, db, user)
+    item_filters = [PlaylistItem.playlist_id == playlist.id, Video.status == "ready"]
+    if playlist.visibility != "private":
+        item_filters.append(Video.visibility == "public")
     items = db.scalars(
         select(Video)
         .join(PlaylistItem, PlaylistItem.video_id == Video.id)
-        .where(PlaylistItem.playlist_id == playlist.id, Video.status == "ready")
+        .where(*item_filters)
         .order_by(PlaylistItem.position.asc(), PlaylistItem.added_at.asc())
     ).unique().all()
     return {**_playlist_summary(playlist, db), "videos": _video_list(items, len(items))}
@@ -324,6 +327,8 @@ def add_playlist_video(
     video = db.get(Video, video_id)
     if video is None or video.status != "ready" or video.visibility == "private":
         raise HTTPException(status_code=404, detail="Video not found")
+    if playlist.visibility != "private" and video.visibility != "public":
+        raise HTTPException(status_code=400, detail="Only public videos can be added to a public playlist")
     if db.get(PlaylistItem, (playlist_id, video_id)) is None:
         position = db.scalar(
             select(func.coalesce(func.max(PlaylistItem.position), -1) + 1).where(
