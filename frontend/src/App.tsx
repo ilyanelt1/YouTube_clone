@@ -588,8 +588,25 @@ export default function App() {
           {user ? (
             <>
               <span className="user-label">{user.display_name}</span>
-              <button className="outline-button" onClick={() => { setShowLibrary(true); setSelected(null); }}>Мои видео</button>
-              <button className="outline-button" onClick={() => { setUploadOpen(true); setError(""); }}>＋ Загрузить</button>
+              <button className="outline-button nav-button" onClick={() => { setPage("home"); setShowLibrary(true); setSelected(null); }}>Мои видео</button>
+              <button className="outline-button nav-button" onClick={() => void loadSubscriptionFeed()}>Подписки</button>
+              <button className="outline-button nav-button" onClick={() => void loadPersonalVideos("history")}>История</button>
+              <button className="outline-button nav-button" onClick={() => void loadPersonalVideos("favorites")}>Избранное</button>
+              <button className="outline-button nav-button" onClick={() => void loadPlaylists()}>Плейлисты</button>
+              <div className="notification-anchor">
+                <button className="icon-button notification-trigger" onClick={() => void toggleNotifications()} title="Уведомления">♢{unreadNotifications > 0 ? <span className="notification-count">{unreadNotifications}</span> : null}</button>
+                {showNotifications && (
+                  <div className="notification-popover">
+                    <div className="notification-heading"><strong>Уведомления</strong><button onClick={() => void markAllNotificationsRead()}>Прочитать все</button></div>
+                    {notifications.length ? notifications.map((item) => (
+                      <button className={item.read ? "notification-item" : "notification-item unread"} key={item.id} onClick={() => void openNotification(item)}>
+                        <span>{item.message}</span><small>{new Date(item.created_at).toLocaleString("ru-RU")}</small>
+                      </button>
+                    )) : <p className="notification-empty">Пока нет уведомлений</p>}
+                  </div>
+                )}
+              </div>
+              <button className="outline-button nav-button" onClick={() => { setUploadOpen(true); setError(""); }}>＋ Загрузить</button>
               <button className="icon-button" onClick={() => void logout()} title="Выйти">↗</button>
             </>
           ) : (
@@ -605,7 +622,7 @@ export default function App() {
             <button className="back-link" onClick={() => setSelected(null)}>← Назад</button>
             <video className="player" src={selected.playback_url} controls autoPlay playsInline />
             <h1>{selected.title}</h1>
-            <div className="video-meta">{selected.channel_name} · @{selected.channel_handle} · {new Date(selected.created_at).toLocaleDateString("ru-RU")}</div>
+            <div className="video-meta"><button className="channel-link" onClick={() => void loadChannel(selected.channel_handle)}>{selected.channel_name} · @{selected.channel_handle}</button> · {new Date(selected.created_at).toLocaleDateString("ru-RU")}</div>
             {selected.description && <p className="description">{selected.description}</p>}
             <div className="social-toolbar">
               <div className="reaction-group">
@@ -613,7 +630,7 @@ export default function App() {
                 <button className={engagement?.viewer_reaction === "dislike" ? "social-button active" : "social-button"} onClick={() => void setVideoReaction("dislike")} aria-label="Не нравится">👎 {engagement?.dislikes ?? 0}</button>
               </div>
               <button className={engagement?.viewer_reposted ? "social-button active" : "social-button"} onClick={() => void toggleRepost()}>🔁 Репост · {engagement?.reposts ?? 0}</button>
-              <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>
+              <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>\n              <button className={saved ? "social-button active" : "social-button"} onClick={() => void toggleFavorite()}>{saved ? "★ В избранном" : "☆ В избранное"}</button>\n              <button className="social-button" onClick={() => void addCurrentToPlaylist()}>＋ В плейлист</button>
               <span className="social-muted">◉ {engagement?.views ?? 0} просмотров</span>
             </div>
             {user && user.username !== selected.channel_handle && (
@@ -650,6 +667,76 @@ export default function App() {
               </div>
             </section>
           </section>
+        ) : page === "channel" && channelPage ? (
+          <>
+            <button className="back-link" onClick={() => { setPage("home"); setChannelPage(null); void loadVideos(); }}>← Все видео</button>
+            <section className="channel-hero">
+              <div className="channel-avatar channel-avatar-large">{channelPage.name.slice(0, 1).toUpperCase()}</div>
+              <div className="channel-hero-info">
+                <p className="eyebrow">КАНАЛ</p><h1>{channelPage.name}</h1>
+                <p>@{channelPage.handle} · {channelPage.subscribers} подписчиков · {channelPage.videos.total} видео</p>
+                {channelPage.description && <p>{channelPage.description}</p>}
+              </div>
+              {user && user.username !== channelPage.handle && (
+                <button className={channelPage.subscribed ? "outline-button subscribed" : "primary-button"} onClick={async () => {
+                  const method = channelPage.subscribed ? "DELETE" : "PUT";
+                  try {
+                    const result = await api<{ subscribed: boolean; subscribers: number }>(`/channels/${encodeURIComponent(channelPage.handle)}/subscription`, { method }, token ?? undefined);
+                    setChannelPage((current) => current ? { ...current, subscribed: result.subscribed, subscribers: result.subscribers } : current);
+                  } catch (err) { setError(err instanceof Error ? err.message : "Не удалось изменить подписку"); }
+                }}>{channelPage.subscribed ? "Вы подписаны" : "Подписаться"}</button>
+              )}
+            </section>
+            <div className="section-heading"><h2>Видео канала</h2><span className="result-count">{channelPage.videos.total} видео</span></div>
+            <div className="video-grid">
+              {videos.map((video) => (
+                <button className="video-card" key={video.id} onClick={() => setSelected(video)}>
+                  <div className="thumbnail">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}</div>
+                  <div className="video-card-info"><div className="channel-avatar">{video.channel_name.slice(0, 1).toUpperCase()}</div><div><h2>{video.title}</h2><p>{new Date(video.created_at).toLocaleDateString("ru-RU")}</p></div></div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : page === "playlists" ? (
+          <>
+            <div className="section-heading">
+              <div><p className="eyebrow">ТВОЯ КОЛЛЕКЦИЯ</p><h1>{selectedPlaylist ? selectedPlaylist.title : "Плейлисты"}</h1></div>
+              {selectedPlaylist ? <button className="outline-button" onClick={() => setSelectedPlaylist(null)}>← К плейлистам</button> : <button className="primary-button" onClick={() => void createPlaylist()}>＋ Создать плейлист</button>}
+            </div>
+            {selectedPlaylist ? (
+              <>
+                <p className="muted">{selectedPlaylist.description || "Без описания"} · {selectedPlaylist.visibility === "private" ? "Приватный" : selectedPlaylist.visibility === "public" ? "Публичный" : "Доступ по ссылке"}</p>
+                <div className="video-grid">
+                  {videos.map((video) => (
+                    <article className="video-card managed-video" key={video.id}>
+                      <button className="video-card-open" onClick={() => setSelected(video)}>
+                        <div className="thumbnail">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}</div>
+                        <div className="video-card-info"><div className="channel-avatar">{video.channel_name.slice(0, 1).toUpperCase()}</div><div><h2>{video.title}</h2><p>{video.channel_name}</p></div></div>
+                      </button>
+                      <div className="video-actions"><button className="small-button danger-button" onClick={async () => {
+                        if (!token || !selectedPlaylist) return;
+                        try {
+                          await api(`/playlists/${selectedPlaylist.id}/videos/${video.id}`, { method: "DELETE" }, token);
+                          await openPlaylist(selectedPlaylist);
+                        } catch (err) { setError(err instanceof Error ? err.message : "Не удалось удалить видео из плейлиста"); }
+                      }}>Убрать</button></div>
+                    </article>
+                  ))}
+                </div>
+                {!videos.length && <p className="comments-empty">В этом плейлисте пока нет видео.</p>}
+              </>
+            ) : (
+              <div className="playlist-grid">
+                {playlists.map((playlist) => (
+                  <button className="playlist-card" key={playlist.id} onClick={() => void openPlaylist(playlist)}>
+                    <span className="playlist-icon">☷</span><strong>{playlist.title}</strong>
+                    <small>{playlist.video_count} видео · {playlist.visibility === "private" ? "Приватный" : playlist.visibility === "public" ? "Публичный" : "По ссылке"}</small>
+                  </button>
+                ))}
+                {!playlists.length && <div className="empty-state"><h2>Плейлистов пока нет</h2><p>Создай первую подборку любимых видео.</p></div>}
+              </div>
+            )}
+          </>
         ) : showLibrary ? (
           <>
             <div className="section-heading">
