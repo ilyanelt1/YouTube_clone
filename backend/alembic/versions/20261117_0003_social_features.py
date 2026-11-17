@@ -65,6 +65,16 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "video_reposts",
+        sa.Column("video_id", sa.Uuid(), nullable=False),
+        sa.Column("user_id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["video_id"], ["videos.id"], ondelete="CASCADE", name=op.f("fk_video_reposts_video_id_videos")),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE", name=op.f("fk_video_reposts_user_id_users")),
+        sa.PrimaryKeyConstraint("video_id", "user_id", name=op.f("pk_video_reposts")),
+    )
+
+    op.create_table(
         "channel_subscriptions",
         sa.Column("subscriber_id", sa.Uuid(), nullable=False),
         sa.Column("channel_id", sa.Uuid(), nullable=False),
@@ -78,6 +88,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_channel_subscriptions_channel_id", table_name="channel_subscriptions")
+    op.drop_table("video_reposts")
     op.drop_table("channel_subscriptions")
     op.drop_table("video_shares")
     op.drop_index("ix_comments_parent_id", table_name="comments")
