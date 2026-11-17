@@ -213,6 +213,21 @@ export default function App() {
     }
   }
 
+  async function editComment(comment: SocialComment) {
+    if (!token) return;
+    const body = window.prompt("Изменить комментарий", comment.body);
+    if (body === null || !body.trim()) return;
+    try {
+      const updated = await api<SocialComment>(`/comments/${comment.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: body.trim() }),
+      }, token);
+      setComments((current) => current.map((item) => item.id === comment.id ? updated : item));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось изменить комментарий");
+    }
+  }
+
   async function removeComment(comment: SocialComment) {
     if (!token) return;
     try {
@@ -479,7 +494,8 @@ export default function App() {
                       <p>{comment.body}</p>
                       <div className="comment-actions">
                         {!comment.parent_id && <button onClick={() => { setReplyTo(comment); setCommentDraft(""); }}>Ответить</button>}
-                        {user?.username === comment.author_handle && <button onClick={() => void removeComment(comment)}>Удалить</button>}
+                        {(user?.username === comment.author_handle || user?.username === selected.channel_handle) && <button onClick={() => void removeComment(comment)}>Удалить</button>}
+                        {user?.username === comment.author_handle && <button onClick={() => void editComment(comment)}>Изменить</button>}
                       </div>
                     </div>
                   </article>
