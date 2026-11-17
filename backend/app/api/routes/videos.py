@@ -231,6 +231,7 @@ def upload_video_endpoint(
     description: Annotated[str | None, Form(max_length=5000)] = None,
     visibility: Annotated[str, Form()] = "public",
     thumbnail: Annotated[UploadFile | None, File()] = None,
+    duration_seconds: Annotated[int | None, Form(ge=0)] = None,
 ) -> VideoRead:
     clean_title = title.strip()
     if not clean_title:
@@ -271,6 +272,7 @@ def upload_video_endpoint(
             thumbnail_key=thumbnail_key,
             file_size_bytes=video_size,
             mime_type=content_type,
+            duration_seconds=duration_seconds,
             published_at=datetime.now(UTC) if visibility != "private" else None,
         )
         db.add(video)
