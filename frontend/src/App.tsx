@@ -115,7 +115,8 @@ export default function App() {
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editVisibility, setEditVisibility] = useState<Video["visibility"]>("public");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);\n  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<File | null>(null);
   const [page, setPage] = useState<"home" | "subscriptions" | "history" | "favorites" | "channel" | "playlists">("home");
   const [channelPage, setChannelPage] = useState<ChannelPage | null>(null);
