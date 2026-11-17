@@ -276,7 +276,17 @@ def upload_video_endpoint(
         db.add(video)
         db.commit()
         db.refresh(video)
-        if visibility == "public":
+    except Exception as exc:
+        db.rollback()
+        if video_uploaded:
+            _delete_storage_object(video_key)
+        if thumbnail_uploaded:
+            _delete_storage_object(thumbnail_key)
+        raise HTTPException(
+            status_code=502, detail="Video upload failed. Please try again."
+        ) from exc
+    if visibility == "public":
+        try:
             subscriber_ids = db.scalars(
                 select(ChannelSubscription.subscriber_id).where(
                     ChannelSubscription.channel_id == channel.id,
@@ -297,15 +307,8 @@ def upload_video_endpoint(
             )
             if subscriber_ids:
                 db.commit()
-    except Exception as exc:
-        db.rollback()
-        if video_uploaded:
-            _delete_storage_object(video_key)
-        if thumbnail_uploaded:
-            _delete_storage_object(thumbnail_key)
-        raise HTTPException(
-            status_code=502, detail="Video upload failed. Please try again."
-        ) from exc
+        except Exception:
+            db.rollback()
     return _video_read(video)
 
 
