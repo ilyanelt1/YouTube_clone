@@ -266,6 +266,26 @@ export default function App() {
     } catch (err) { setError(err instanceof Error ? err.message : "Не удалось создать плейлист"); }
   }
 
+  async function updatePlaylistVisibility(playlist: PlaylistSummary) {
+    if (!token) return;
+    const visibility = playlist.visibility === "public" ? "private" : "public";
+    try {
+      const updated = await api<PlaylistSummary>(`/playlists/${playlist.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility }),
+      }, token);
+      setPlaylists((current) => current.map((item) => item.id === playlist.id ? updated : item));
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось изменить доступ к плейлисту"); }
+  }
+
+  async function deletePlaylist(playlist: PlaylistSummary) {
+    if (!token || !window.confirm(`Удалить плейлист «${playlist.title}»?`)) return;
+    try {
+      await api(`/playlists/${playlist.id}`, { method: "DELETE" }, token);
+      setPlaylists((current) => current.filter((item) => item.id !== playlist.id));
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось удалить плейлист"); }
+  }
+
   async function addCurrentToPlaylist() {
     if (!selected || !token) { setShowAuth(true); return; }
     try {
@@ -743,10 +763,16 @@ export default function App() {
             ) : (
               <div className="playlist-grid">
                 {playlists.map((playlist) => (
-                  <button className="playlist-card" key={playlist.id} onClick={() => void openPlaylist(playlist)}>
-                    <span className="playlist-icon">☷</span><strong>{playlist.title}</strong>
-                    <small>{playlist.video_count} видео · {playlist.visibility === "private" ? "Приватный" : playlist.visibility === "public" ? "Публичный" : "По ссылке"}</small>
-                  </button>
+                  <article className="playlist-card" key={playlist.id}>
+                    <button className="playlist-open" onClick={() => void openPlaylist(playlist)}>
+                      <span className="playlist-icon">☷</span><strong>{playlist.title}</strong>
+                      <small>{playlist.video_count} видео · {playlist.visibility === "private" ? "Приватный" : playlist.visibility === "public" ? "Публичный" : "По ссылке"}</small>
+                    </button>
+                    <div className="playlist-actions">
+                      <button className="small-button" onClick={() => void updatePlaylistVisibility(playlist)}>{playlist.visibility === "public" ? "Сделать приватным" : "Сделать публичным"}</button>
+                      <button className="small-button danger-button" onClick={() => void deletePlaylist(playlist)}>Удалить</button>
+                    </div>
+                  </article>
                 ))}
                 {!playlists.length && <div className="empty-state"><h2>Плейлистов пока нет</h2><p>Создай первую подборку любимых видео.</p></div>}
               </div>
@@ -791,7 +817,7 @@ export default function App() {
             {page === "home" && <div className="video-filters">
               <label>Сортировка<select value={sortOrder} onChange={(event) => { const value = event.target.value as typeof sortOrder; setSortOrder(value); void loadVideos(query, value, durationFilter, channelFilter); }}><option value="newest">Сначала новые</option><option value="popular">Популярные</option><option value="oldest">Сначала старые</option></select></label>
               <label>Длительность<select value={durationFilter} onChange={(event) => { const value = event.target.value as typeof durationFilter; setDurationFilter(value); void loadVideos(query, sortOrder, value, channelFilter); }}><option value="">Любая</option><option value="short">До 4 минут</option><option value="long">От 4 минут</option></select></label>
-              <label>Канал<select value={channelFilter} onChange={(event) => { const value = event.target.value; setChannelFilter(value); void loadVideos(query, sortOrder, durationFilter, value); }}><option value="">Все каналы</option>{Array.from(new Map(videos.map((video) => [video.channel_handle, video.channel_name])).entries()).map(([handle, name]) => <option key={handle} value={handle}>{name}</option>)}</select></label>
+              <label>Канал<input value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)} placeholder="Имя канала" /><button className="small-button" onClick={() => void loadVideos(query, sortOrder, durationFilter, channelFilter.trim().replace(/^@/, ""))}>Применить</button></label>
             </div>}
             {page === "history" && <button className="small-button danger-button" onClick={async () => { if (!token || !window.confirm("Очистить историю просмотров?")) return; try { await api("/users/me/history", { method: "DELETE" }, token); setVideos([]); } catch (err) { setError(err instanceof Error ? err.message : "Не удалось очистить историю"); } }}>Очистить историю</button>}
             {videos.length ? (
