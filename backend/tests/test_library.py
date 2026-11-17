@@ -83,9 +83,7 @@ def test_channels_feed_history_favorites_playlists_and_notifications(monkeypatch
         assert channel.json()["name"] == "Creator"
         assert channel.json()["videos"]["total"] == 1
 
-        subscription = client.put(
-            "/api/v1/channels/creator/subscription", headers=viewer
-        )
+        subscription = client.put("/api/v1/channels/creator/subscription", headers=viewer)
         assert subscription.status_code == 200
         owner_notifications = client.get("/api/v1/notifications", headers=owner)
         assert owner_notifications.json()["unread_count"] == 1
