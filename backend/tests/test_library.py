@@ -54,11 +54,11 @@ def register(client: TestClient, username: str) -> str:
     return response.json()["access_token"]
 
 
-def upload_public_video(client: TestClient, token: str, title: str) -> dict:
+def upload_public_video(\n    client: TestClient, token: str, title: str, duration_seconds: int = 120\n) -> dict:
     response = client.post(
         "/api/v1/videos/upload",
         headers={"Authorization": f"Bearer {token}"},
-        data={"title": title, "visibility": "public"},
+        data={\n            "title": title,\n            "visibility": "public",\n            "duration_seconds": str(duration_seconds),\n        },
         files={"file": ("test.mp4", BytesIO(VALID_MP4), "video/mp4")},
     )
     assert response.status_code == 201
@@ -89,7 +89,7 @@ def test_channels_feed_history_favorites_playlists_and_notifications(monkeypatch
         assert owner_notifications.json()["unread_count"] == 1
         assert owner_notifications.json()["items"][0]["kind"] == "new_subscriber"
 
-        second_video = upload_public_video(client, owner_token, "Second channel video")
+        second_video = upload_public_video(client, owner_token, "Second channel video", 600)\n        short_videos = client.get("/api/v1/videos?duration=short")\n        long_videos = client.get("/api/v1/videos?duration=long")\n        search_results = client.get("/api/v1/videos?q=Second")\n        assert short_videos.json()["total"] == 1\n        assert long_videos.json()["total"] == 1\n        assert search_results.json()["total"] == 1
         feed = client.get("/api/v1/feed/subscriptions", headers=viewer)
         assert feed.status_code == 200
         assert feed.json()["total"] == 2
