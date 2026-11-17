@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 type User = {
   id: string;
@@ -95,6 +95,7 @@ export default function App() {
   const [replyTo, setReplyTo] = useState<SocialComment | null>(null);
   const [subscribed, setSubscribed] = useState(false);
   const [subscriberCount, setSubscriberCount] = useState(0);
+  const viewedVideoIds = useRef(new Set<string>());
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -160,9 +161,12 @@ export default function App() {
     }).catch((err) => {
       if (active) setError(err instanceof Error ? err.message : "Не удалось загрузить реакции и комментарии");
     });
-    void api<{ views: number }>(`/videos/${selected.id}/view`, { method: "POST" }, token ?? undefined)
-      .then((result) => { if (active) setEngagement((current) => current ? { ...current, views: result.views } : current); })
-      .catch(() => undefined);
+    if (!viewedVideoIds.current.has(selected.id)) {
+      viewedVideoIds.current.add(selected.id);
+      void api<{ views: number }>(`/videos/${selected.id}/view`, { method: "POST" }, token ?? undefined)
+        .then((result) => { if (active) setEngagement((current) => current ? { ...current, views: result.views } : current); })
+        .catch(() => undefined);
+    }
     return () => { active = false; };
   }, [selected?.id, token, user?.id]);
 
@@ -213,8 +217,9 @@ export default function App() {
     if (!token) return;
     try {
       await api<void>(`/comments/${comment.id}`, { method: "DELETE" }, token);
+      const removedCount = comments.filter((item) => item.id === comment.id || item.parent_id === comment.id).length;
       setComments((current) => current.filter((item) => item.id !== comment.id && item.parent_id !== comment.id));
-      setEngagement((current) => current ? { ...current, comments: Math.max(0, current.comments - 1) } : current);
+      setEngagement((current) => current ? { ...current, comments: Math.max(0, current.comments - removedCount) } : current);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось удалить комментарий");
     }
