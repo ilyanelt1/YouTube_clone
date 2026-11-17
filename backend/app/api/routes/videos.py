@@ -82,9 +82,9 @@ def list_videos(
 def upload_video_endpoint(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    file: Annotated[UploadFile, File()],
     title: Annotated[str, Form(min_length=1, max_length=120)],
     description: Annotated[str | None, Form(max_length=5000)] = None,
-    file: Annotated[UploadFile, File()],
 ) -> VideoRead:
     clean_title = title.strip()
     if not clean_title:
