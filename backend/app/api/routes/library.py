@@ -314,7 +314,11 @@ def get_playlist(
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
     playlist = _playlist_access(playlist_id, db, user)
-    item_filters = [\n        PlaylistItem.playlist_id == playlist.id,\n        Video.status == "ready",\n        Video.visibility != "private",\n    ]
+    item_filters = [
+        PlaylistItem.playlist_id == playlist.id,
+        Video.status == "ready",
+        Video.visibility != "private",
+    ]
     if playlist.visibility != "private":
         item_filters.append(Video.visibility == "public")
     items = (
