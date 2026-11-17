@@ -309,9 +309,7 @@ def delete_video(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     video = db.scalar(
-        select(Video)
-        .join(Channel)
-        .where(Video.id == video_id, Channel.owner_id == current_user.id)
+        select(Video).join(Channel).where(Video.id == video_id, Channel.owner_id == current_user.id)
     )
     if video is None:
         raise HTTPException(status_code=404, detail="Video not found")
