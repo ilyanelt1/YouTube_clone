@@ -420,7 +420,6 @@ class Notification(Base):
     )
 
 
-
 class VideoReport(Base):
     __tablename__ = "video_reports"
     __table_args__ = (
