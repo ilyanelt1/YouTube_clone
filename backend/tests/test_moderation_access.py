@@ -23,11 +23,13 @@ def make_client() -> tuple[TestClient, sessionmaker[Session], sa.Engine]:
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     with factory() as db:
-        db.add_all([
-            Role(name="user", description="Обычный пользователь"),
-            Role(name="moderator", description="Модератор"),
-            Role(name="admin", description="Администратор"),
-        ])
+        db.add_all(
+            [
+                Role(name="user", description="Обычный пользователь"),
+                Role(name="moderator", description="Модератор"),
+                Role(name="admin", description="Администратор"),
+            ]
+        )
         db.commit()
 
     def override_get_db() -> Generator[Session]:
@@ -98,7 +100,10 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         )
         assert granted.status_code == 200
         assert client.get(f"/api/v1/videos/{video_id}", headers=viewer).status_code == 200
-        assert client.get(f"/api/v1/videos/{video_id}/access-grants", headers=viewer).status_code == 404
+        assert (
+            client.get(f"/api/v1/videos/{video_id}/access-grants", headers=viewer).status_code
+            == 404
+        )
 
         revoked = client.delete(
             f"/api/v1/videos/{video_id}/access-grants/{viewer_id}",
@@ -114,11 +119,14 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
             json={"reason": "spam", "description": "Проверочная жалоба"},
         )
         assert report.status_code == 201
-        assert client.post(
-            f"/api/v1/moderation/videos/{public_video['id']}/reports",
-            headers=viewer,
-            json={"reason": "spam"},
-        ).status_code == 409
+        assert (
+            client.post(
+                f"/api/v1/moderation/videos/{public_video['id']}/reports",
+                headers=viewer,
+                json={"reason": "spam"},
+            ).status_code
+            == 409
+        )
 
         assert client.get("/api/v1/moderation/reports", headers=viewer).status_code == 403
         assert client.get("/api/v1/moderation/reports").status_code == 401
@@ -172,10 +180,13 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         )
         assert role_update.status_code == 200
         assert role_update.json()["roles"] == ["moderator", "user"]
-        assert client.put(
-            f"/api/v1/moderation/users/{owner_id}/roles",
-            headers=admin_headers,
-            json={"roles": ["user"]},
-        ).status_code == 400
+        assert (
+            client.put(
+                f"/api/v1/moderation/users/{owner_id}/roles",
+                headers=admin_headers,
+                json={"roles": ["user"]},
+            ).status_code
+            == 400
+        )
     finally:
         close_client(client, engine)
