@@ -536,11 +536,13 @@ export default function App() {
     setUploadProgress(0);
     setError("");
     const form = new FormData(event.currentTarget);
+    if (selectedDuration !== null) form.set("duration_seconds", String(selectedDuration));
     if (!selectedThumbnail) form.delete("thumbnail");
     try {
       await uploadWithProgress(form, token, setUploadProgress);
       setUploadOpen(false);
       setSelectedFile(null);
+      setSelectedDuration(null);
       setSelectedThumbnail(null);
       setUploadProgress(null);
       await Promise.all([loadVideos(query, sortOrder, durationFilter), loadMyVideos(token)]);
@@ -619,6 +621,7 @@ export default function App() {
     setUploadOpen(false);
     setUploadProgress(null);
     setSelectedFile(null);
+    setSelectedDuration(null);
     setSelectedThumbnail(null);
   }
 
