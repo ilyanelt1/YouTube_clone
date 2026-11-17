@@ -115,7 +115,7 @@ export default function App() {
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editVisibility, setEditVisibility] = useState<Video["visibility"]>("public");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);\n  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<File | null>(null);
   const [page, setPage] = useState<"home" | "subscriptions" | "history" | "favorites" | "channel" | "playlists">("home");
   const [channelPage, setChannelPage] = useState<ChannelPage | null>(null);
@@ -495,6 +495,21 @@ export default function App() {
       setUploadOpen(false);
       setShowLibrary(false);
     }
+  }
+
+  function inspectVideoFile(file: File | null) {
+    setSelectedFile(file);
+    setSelectedDuration(null);
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    const probe = document.createElement("video");
+    probe.preload = "metadata";
+    probe.onloadedmetadata = () => {
+      if (Number.isFinite(probe.duration)) setSelectedDuration(Math.round(probe.duration));
+      URL.revokeObjectURL(objectUrl);
+    };
+    probe.onerror = () => URL.revokeObjectURL(objectUrl);
+    probe.src = objectUrl;
   }
 
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
@@ -888,7 +903,7 @@ export default function App() {
                 </select>
               </label>
               <label className="file-picker">Выбрать видеофайл
-                <input name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+                <input name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required onChange={(event) => inspectVideoFile(event.target.files?.[0] ?? null)} />
                 {selectedFile && <span className="file-info">{selectedFile.name} · {formatSize(selectedFile.size)}</span>}
               </label>
               <label className="file-picker">Обложка (необязательно)
