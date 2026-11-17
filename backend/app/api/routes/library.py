@@ -305,12 +305,16 @@ def get_playlist(
     item_filters = [PlaylistItem.playlist_id == playlist.id, Video.status == "ready"]
     if playlist.visibility != "private":
         item_filters.append(Video.visibility == "public")
-    items = db.scalars(
-        select(Video)
-        .join(PlaylistItem, PlaylistItem.video_id == Video.id)
-        .where(*item_filters)
-        .order_by(PlaylistItem.position.asc(), PlaylistItem.added_at.asc())
-    ).unique().all()
+    items = (
+        db.scalars(
+            select(Video)
+            .join(PlaylistItem, PlaylistItem.video_id == Video.id)
+            .where(*item_filters)
+            .order_by(PlaylistItem.position.asc(), PlaylistItem.added_at.asc())
+        )
+        .unique()
+        .all()
+    )
     return {**_playlist_summary(playlist, db), "videos": _video_list(items, len(items))}
 
 
@@ -331,9 +335,7 @@ def update_playlist(
             raise HTTPException(status_code=422, detail="Playlist title cannot be empty")
         playlist.title = title
     if "description" in changes:
-        playlist.description = (
-            changes["description"].strip() if changes["description"] else None
-        )
+        playlist.description = changes["description"].strip() if changes["description"] else None
     if "visibility" in changes:
         playlist.visibility = changes["visibility"]
     db.commit()
@@ -372,11 +374,14 @@ def add_playlist_video(
             status_code=400, detail="Only public videos can be added to a public playlist"
         )
     if db.get(PlaylistItem, (playlist_id, video_id)) is None:
-        position = db.scalar(
-            select(func.coalesce(func.max(PlaylistItem.position), -1) + 1).where(
-                PlaylistItem.playlist_id == playlist_id
+        position = (
+            db.scalar(
+                select(func.coalesce(func.max(PlaylistItem.position), -1) + 1).where(
+                    PlaylistItem.playlist_id == playlist_id
+                )
             )
-        ) or 0
+            or 0
+        )
         db.add(PlaylistItem(playlist_id=playlist_id, video_id=video_id, position=position))
         db.commit()
     return _playlist_summary(playlist, db)
