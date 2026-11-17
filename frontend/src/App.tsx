@@ -26,6 +26,11 @@ type Engagement = { likes: number; dislikes: number; comments: number; shares: n
 
 type SocialComment = { id: string; video_id: string; parent_id: string | null; body: string; author_name: string; author_handle: string; created_at: string; updated_at: string };
 
+type ChannelPage = { handle: string; name: string; description: string | null; subscribers: number; subscribed: boolean; videos: { items: Video[]; total: number } };
+type PlaylistSummary = { id: string; title: string; description: string | null; visibility: "public" | "unlisted" | "private"; video_count: number };
+type PlaylistDetails = PlaylistSummary & { videos: { items: Video[]; total: number } };
+type NotificationItem = { id: string; kind: string; message: string; video_id: string | null; comment_id: string | null; read: boolean; created_at: string };
+
 type AuthResponse = {
   access_token: string;
   user: User;
@@ -112,11 +117,27 @@ export default function App() {
   const [editVisibility, setEditVisibility] = useState<Video["visibility"]>("public");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<File | null>(null);
+  const [page, setPage] = useState<"home" | "subscriptions" | "history" | "favorites" | "channel" | "playlists">("home");
+  const [channelPage, setChannelPage] = useState<ChannelPage | null>(null);
+  const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<PlaylistDetails | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest" | "popular">("newest");
+  const [durationFilter, setDurationFilter] = useState<"" | "short" | "long">("");
+  const [saved, setSaved] = useState(false);
 
-  const loadVideos = useCallback(async (search = "") => {
+  const loadVideos = useCallback(async (
+    search = "",
+    sort: "newest" | "oldest" | "popular" = "newest",
+    duration: "" | "short" | "long" = "",
+  ) => {
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set("q", search.trim());
+      params.set("sort", sort);
+      if (duration) params.set("duration", duration);
       const result = await api<{ items: Video[]; total: number }>(`/videos?${params.toString()}`);
       setVideos(result.items);
     } catch (err) {
@@ -177,6 +198,118 @@ export default function App() {
       .then(setSelected)
       .catch(() => setError("Видео по ссылке не найдено или недоступно"));
   }, []);
+
+  async function loadSubscriptionFeed() {
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const result = await api<{ items: Video[]; total: number }>("/feed/subscriptions", {}, token);
+      setVideos(result.items); setPage("subscriptions"); setSelected(null); setShowLibrary(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось загрузить ленту подписок"); }
+  }
+
+  async function loadPersonalVideos(section: "history" | "favorites") {
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const path = section === "history" ? "/users/me/history" : "/users/me/favorites";
+      const result = await api<{ items: Video[]; total: number }>(path, {}, token);
+      setVideos(result.items); setPage(section); setSelected(null); setShowLibrary(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось загрузить раздел"); }
+  }
+
+  async function loadChannel(handle: string) {
+    try {
+      const result = await api<ChannelPage>(`/channels/${encodeURIComponent(handle)}`, {}, token ?? undefined);
+      setChannelPage(result); setVideos(result.videos.items); setPage("channel");
+      setSelected(null); setShowLibrary(false); setShowNotifications(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось открыть канал"); }
+  }
+
+  async function loadPlaylists() {
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const result = await api<PlaylistSummary[]>("/playlists/mine", {}, token);
+      setPlaylists(result); setSelectedPlaylist(null); setPage("playlists");
+      setSelected(null); setShowLibrary(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось загрузить плейлисты"); }
+  }
+
+  async function openPlaylist(playlist: PlaylistSummary) {
+    if (!token) return;
+    try {
+      const result = await api<PlaylistDetails>(`/playlists/${playlist.id}`, {}, token);
+      setSelectedPlaylist(result); setVideos(result.videos.items);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось открыть плейлист"); }
+  }
+
+  async function createPlaylist() {
+    if (!token) { setShowAuth(true); return; }
+    const title = window.prompt("Название нового плейлиста");
+    if (!title?.trim()) return;
+    try {
+      await api<PlaylistSummary>("/playlists", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim(), visibility: "private" }),
+      }, token);
+      await loadPlaylists();
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось создать плейлист"); }
+  }
+
+  async function addCurrentToPlaylist() {
+    if (!selected || !token) { setShowAuth(true); return; }
+    try {
+      const available = await api<PlaylistSummary[]>("/playlists/mine", {}, token);
+      if (!available.length) {
+        if (window.confirm("У тебя пока нет плейлистов. Создать первый?")) await createPlaylist();
+        return;
+      }
+      const choice = window.prompt(`Введи номер плейлиста:\n${available.map((item, index) => `${index + 1}. ${item.title}`).join("\n")}`);
+      const index = Number(choice) - 1;
+      if (!Number.isInteger(index) || index < 0 || index >= available.length) return;
+      await api(`/playlists/${available[index].id}/videos/${selected.id}`, { method: "POST" }, token);
+      setError("Видео добавлено в плейлист");
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось добавить видео в плейлист"); }
+  }
+
+  async function toggleFavorite() {
+    if (!selected || !token) { setShowAuth(true); return; }
+    try {
+      const method = saved ? "DELETE" : "PUT";
+      await api(`/videos/${selected.id}/favorite`, { method }, token);
+      setSaved(!saved);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось изменить избранное"); }
+  }
+
+  async function toggleNotifications() {
+    if (!token) { setShowAuth(true); return; }
+    if (showNotifications) { setShowNotifications(false); return; }
+    try {
+      const result = await api<{ items: NotificationItem[]; unread_count: number }>("/notifications", {}, token);
+      setNotifications(result.items); setUnreadNotifications(result.unread_count); setShowNotifications(true);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось загрузить уведомления"); }
+  }
+
+  async function openNotification(item: NotificationItem) {
+    if (!token) return;
+    try {
+      await api(`/notifications/${item.id}/read`, { method: "POST" }, token);
+      setNotifications((current) => current.map((entry) => entry.id === item.id ? { ...entry, read: true } : entry));
+      setUnreadNotifications((count) => Math.max(0, count - (item.read ? 0 : 1)));
+      setShowNotifications(false);
+      if (item.video_id) {
+        const video = await api<Video>(`/videos/${item.video_id}`, {}, token);
+        setSelected(video);
+      }
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось открыть уведомление"); }
+  }
+
+  async function markAllNotificationsRead() {
+    if (!token) return;
+    try {
+      await api("/notifications/read-all", { method: "POST" }, token);
+      setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+      setUnreadNotifications(0);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось отметить уведомления"); }
+  }
 
   async function setVideoReaction(reaction: "like" | "dislike") {
     if (!selected) return;
@@ -363,7 +496,7 @@ export default function App() {
       setSelectedFile(null);
       setSelectedThumbnail(null);
       setUploadProgress(null);
-      await Promise.all([loadVideos(query), loadMyVideos(token)]);
+      await Promise.all([loadVideos(query, sortOrder, durationFilter), loadMyVideos(token)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
       setUploadProgress(null);
@@ -399,7 +532,7 @@ export default function App() {
         token,
       );
       setEditingVideo(null);
-      await Promise.all([loadVideos(query), loadMyVideos(token)]);
+      await Promise.all([loadVideos(query, sortOrder, durationFilter), loadMyVideos(token)]);
       if (selected?.id === editingVideo.id) {
         const updated = await api<Video>(`/videos/${editingVideo.id}`, {}, token);
         setSelected(updated);
