@@ -145,14 +145,10 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         assert shared_again.json()["shares"] == 1
         assert f"?video={video_id}" in shared.json()["share_url"]
 
-        subscription = client.put(
-            "/api/v1/channels/creator/subscription", headers=viewer
-        )
+        subscription = client.put("/api/v1/channels/creator/subscription", headers=viewer)
         assert subscription.status_code == 200
         assert subscription.json() == {"subscribed": True, "subscribers": 1}
-        unsubscribed = client.delete(
-            "/api/v1/channels/creator/subscription", headers=viewer
-        )
+        unsubscribed = client.delete("/api/v1/channels/creator/subscription", headers=viewer)
         assert unsubscribed.json() == {"subscribed": False, "subscribers": 0}
 
         first_view = client.post(f"/api/v1/videos/{video_id}/view")
