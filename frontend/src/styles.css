@@ -138,3 +138,11 @@ h1{font-size:30px;letter-spacing:-1px;margin:0}
 .playlist-card small{color:#999}
 .playlist-icon{font-size:26px;color:#f55}
 @media(max-width:760px){.account-actions{flex-wrap:wrap;justify-content:flex-end;gap:7px}.nav-button{padding:7px 9px}.channel-hero{align-items:flex-start;flex-wrap:wrap;padding:20px}.channel-avatar-large{width:60px;height:60px}.channel-hero-info{min-width:calc(100% - 85px)}.video-filters{flex-wrap:wrap}}
+
+.playlist-open{display:flex;flex-direction:column;align-items:flex-start;gap:10px;width:100%;border:0;background:transparent;color:inherit;text-align:left}
+.playlist-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}
+.video-filters input{max-width:160px;border:1px solid #393939;border-radius:18px;background:#202020;color:#eee;padding:8px 12px}
+.video-filters label{flex-wrap:wrap}
+.topbar{gap:16px}
+.search{max-width:480px}
+.account-actions{gap:8px}
