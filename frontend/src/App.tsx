@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 type User = {
   id: string;
@@ -21,6 +21,10 @@ type Video = {
   playback_url: string;
   thumbnail_url: string | null;
 };
+
+type Engagement = { likes: number; dislikes: number; comments: number; shares: number; reposts: number; viewer_reposted: boolean; views: number; viewer_reaction: "like" | "dislike" | null };
+
+type SocialComment = { id: string; video_id: string; parent_id: string | null; body: string; author_name: string; author_handle: string; created_at: string; updated_at: string };
 
 type AuthResponse = {
   access_token: string;
@@ -85,6 +89,13 @@ export default function App() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [myVideos, setMyVideos] = useState<Video[]>([]);
   const [selected, setSelected] = useState<Video | null>(null);
+  const [engagement, setEngagement] = useState<Engagement | null>(null);
+  const [comments, setComments] = useState<SocialComment[]>([]);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [replyTo, setReplyTo] = useState<SocialComment | null>(null);
+  const [subscribed, setSubscribed] = useState(false);
+  const [subscriberCount, setSubscriberCount] = useState(0);
+  const viewedVideoIds = useRef(new Set<string>());
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -128,6 +139,153 @@ export default function App() {
       })
       .catch(() => undefined);
   }, [loadVideos, loadMyVideos]);
+
+  useEffect(() => {
+    if (!selected) {
+      setEngagement(null);
+      setComments([]);
+      setReplyTo(null);
+      return;
+    }
+    let active = true;
+    void Promise.all([
+      api<Engagement>(`/videos/${selected.id}/engagement`, {}, token ?? undefined),
+      api<{ items: SocialComment[]; total: number }>(`/videos/${selected.id}/comments`, {}, token ?? undefined),
+      api<{ subscribed: boolean; subscribers: number }>(`/channels/${encodeURIComponent(selected.channel_handle)}/subscription`, {}, token ?? undefined),
+    ]).then(([stats, discussion, subscription]) => {
+      if (!active) return;
+      setEngagement(stats);
+      setComments(discussion.items);
+      setSubscribed(subscription.subscribed);
+      setSubscriberCount(subscription.subscribers);
+    }).catch((err) => {
+      if (active) setError(err instanceof Error ? err.message : "Не удалось загрузить реакции и комментарии");
+    });
+    if (!viewedVideoIds.current.has(selected.id)) {
+      viewedVideoIds.current.add(selected.id);
+      void api<{ views: number }>(`/videos/${selected.id}/view`, { method: "POST" }, token ?? undefined)
+        .then((result) => { if (active) setEngagement((current) => current ? { ...current, views: result.views } : current); })
+        .catch(() => undefined);
+    }
+    return () => { active = false; };
+  }, [selected?.id, token, user?.id]);
+
+  useEffect(() => {
+    const videoId = new URLSearchParams(window.location.search).get("video");
+    if (!videoId) return;
+    api<Video>(`/videos/${videoId}`)
+      .then(setSelected)
+      .catch(() => setError("Видео по ссылке не найдено или недоступно"));
+  }, []);
+
+  async function setVideoReaction(reaction: "like" | "dislike") {
+    if (!selected) return;
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const next = engagement?.viewer_reaction === reaction ? null : reaction;
+      const result = await api<Engagement>(`/videos/${selected.id}/reaction`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reaction: next }),
+      }, token);
+      setEngagement(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить реакцию");
+    }
+  }
+
+  async function submitComment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || !token || !commentDraft.trim()) {
+      if (!token) setShowAuth(true);
+      return;
+    }
+    try {
+      const created = await api<SocialComment>(`/videos/${selected.id}/comments`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: commentDraft.trim(), parent_id: replyTo?.id ?? null }),
+      }, token);
+      setComments((current) => [...current, created]);
+      setCommentDraft("");
+      setReplyTo(null);
+      setEngagement((current) => current ? { ...current, comments: current.comments + 1 } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось отправить комментарий");
+    }
+  }
+
+  async function editComment(comment: SocialComment) {
+    if (!token) return;
+    const body = window.prompt("Изменить комментарий", comment.body);
+    if (body === null || !body.trim()) return;
+    try {
+      const updated = await api<SocialComment>(`/comments/${comment.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: body.trim() }),
+      }, token);
+      setComments((current) => current.map((item) => item.id === comment.id ? updated : item));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось изменить комментарий");
+    }
+  }
+
+  async function removeComment(comment: SocialComment) {
+    if (!token) return;
+    try {
+      await api<void>(`/comments/${comment.id}`, { method: "DELETE" }, token);
+      const removedCount = comments.filter((item) => item.id === comment.id || item.parent_id === comment.id).length;
+      setComments((current) => current.filter((item) => item.id !== comment.id && item.parent_id !== comment.id));
+      setEngagement((current) => current ? { ...current, comments: Math.max(0, current.comments - removedCount) } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить комментарий");
+    }
+  }
+
+  async function toggleRepost() {
+    if (!selected) return;
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const method = engagement?.viewer_reposted ? "DELETE" : "PUT";
+      const result = await api<Engagement>(`/videos/${selected.id}/repost`, { method }, token);
+      setEngagement(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сделать репост");
+    }
+  }
+
+  async function toggleSubscription() {
+    if (!selected) return;
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const method = subscribed ? "DELETE" : "PUT";
+      const result = await api<{ subscribed: boolean; subscribers: number }>(
+        `/channels/${encodeURIComponent(selected.channel_handle)}/subscription`, { method }, token,
+      );
+      setSubscribed(result.subscribed);
+      setSubscriberCount(result.subscribers);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось изменить подписку");
+    }
+  }
+
+  async function shareVideo() {
+    if (!selected) return;
+    try {
+      if (token) {
+        const result = await api<{ shares: number; share_url: string }>(
+          `/videos/${selected.id}/share`, { method: "POST" }, token,
+        );
+        setEngagement((current) => current ? { ...current, shares: result.shares } : current);
+        if (navigator.share) await navigator.share({ title: selected.title, url: result.share_url });
+        else await navigator.clipboard.writeText(result.share_url);
+      } else {
+        const url = `${window.location.origin}/?video=${selected.id}`;
+        if (navigator.share) await navigator.share({ title: selected.title, url });
+        else await navigator.clipboard.writeText(url);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name !== "AbortError") setError("Не удалось поделиться видео");
+    }
+  }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -316,6 +474,48 @@ export default function App() {
             <h1>{selected.title}</h1>
             <div className="video-meta">{selected.channel_name} · @{selected.channel_handle} · {new Date(selected.created_at).toLocaleDateString("ru-RU")}</div>
             {selected.description && <p className="description">{selected.description}</p>}
+            <div className="social-toolbar">
+              <div className="reaction-group">
+                <button className={engagement?.viewer_reaction === "like" ? "social-button active" : "social-button"} onClick={() => void setVideoReaction("like")} aria-label="Нравится">👍 {engagement?.likes ?? 0}</button>
+                <button className={engagement?.viewer_reaction === "dislike" ? "social-button active" : "social-button"} onClick={() => void setVideoReaction("dislike")} aria-label="Не нравится">👎 {engagement?.dislikes ?? 0}</button>
+              </div>
+              <button className={engagement?.viewer_reposted ? "social-button active" : "social-button"} onClick={() => void toggleRepost()}>🔁 Репост · {engagement?.reposts ?? 0}</button>
+              <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>
+              <span className="social-muted">◉ {engagement?.views ?? 0} просмотров</span>
+            </div>
+            {user && user.username !== selected.channel_handle && (
+              <div className="channel-subscription">
+                <div><strong>{selected.channel_name}</strong><span>{subscriberCount} подписчиков</span></div>
+                <button className={subscribed ? "outline-button subscribed" : "primary-button"} onClick={() => void toggleSubscription()}>
+                  {subscribed ? "Вы подписаны" : "Подписаться"}
+                </button>
+              </div>
+            )}
+            <section className="comments-section">
+              <h2>Комментарии · {engagement?.comments ?? comments.length}</h2>
+              <form className="comment-form" onSubmit={submitComment}>
+                {replyTo && <div className="replying-to">Ответ пользователю @{replyTo.author_handle}<button type="button" onClick={() => setReplyTo(null)}>Отмена</button></div>}
+                <textarea value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder={user ? "Оставьте комментарий..." : "Войдите, чтобы оставить комментарий"} maxLength={2000} rows={3} />
+                <button className="primary-button" disabled={!commentDraft.trim()}>Отправить</button>
+              </form>
+              <div className="comment-list">
+                {comments.map((comment) => (
+                  <article className={comment.parent_id ? "comment reply-comment" : "comment"} key={comment.id}>
+                    <div className="comment-avatar">{comment.author_name.slice(0, 1).toUpperCase()}</div>
+                    <div className="comment-content">
+                      <div className="comment-author">{comment.author_name} <span>@{comment.author_handle} · {new Date(comment.created_at).toLocaleDateString("ru-RU")}</span></div>
+                      <p>{comment.body}</p>
+                      <div className="comment-actions">
+                        {!comment.parent_id && <button onClick={() => { setReplyTo(comment); setCommentDraft(""); }}>Ответить</button>}
+                        {(user?.username === comment.author_handle || user?.username === selected.channel_handle) && <button onClick={() => void removeComment(comment)}>Удалить</button>}
+                        {user?.username === comment.author_handle && <button onClick={() => void editComment(comment)}>Изменить</button>}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+                {!comments.length && <p className="comments-empty">Пока нет комментариев. Будьте первым!</p>}
+              </div>
+            </section>
           </section>
         ) : showLibrary ? (
           <>
