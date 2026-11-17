@@ -1,0 +1,263 @@
+from datetime import datetime
+from typing import Annotated, Literal
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user, get_optional_current_user
+from app.db.session import get_db
+from app.models import Channel, Comment, User, Video, VideoReaction, VideoShare
+
+router = APIRouter(tags=["social"])
+
+
+class ReactionInput(BaseModel):
+    reaction: Literal["like", "dislike"] | None
+
+
+class CommentInput(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+    parent_id: UUID | None = None
+
+
+class CommentRead(BaseModel):
+    id: UUID
+    video_id: UUID
+    parent_id: UUID | None
+    body: str
+    author_name: str
+    author_handle: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CommentList(BaseModel):
+    items: list[CommentRead]
+    total: int
+
+
+def accessible_video(video_id: UUID, db: Session, user: User | None) -> Video:
+    video = db.scalar(select(Video).where(Video.id == video_id, Video.status == "ready"))
+    if video is None or (
+        video.visibility == "private" and (user is None or video.channel.owner_id != user.id)
+    ):
+        raise HTTPException(status_code=404, detail="Video not found")
+    return video
+
+
+def serialize_comment(comment: Comment) -> CommentRead:
+    return CommentRead(
+        id=comment.id,
+        video_id=comment.video_id,
+        parent_id=comment.parent_id,
+        body=comment.body,
+        author_name=comment.author.display_name,
+        author_handle=comment.author.username,
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
+    )
+
+
+@router.get("/videos/{video_id}/engagement")
+def get_engagement(
+    video_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_current_user)],
+) -> dict:
+    accessible_video(video_id, db, user)
+    likes = db.scalar(select(func.count()).select_from(VideoReaction).where(
+        VideoReaction.video_id == video_id, VideoReaction.reaction == "like"
+    )) or 0
+    dislikes = db.scalar(select(func.count()).select_from(VideoReaction).where(
+        VideoReaction.video_id == video_id, VideoReaction.reaction == "dislike"
+    )) or 0
+    comments = db.scalar(select(func.count()).select_from(Comment).where(
+        Comment.video_id == video_id
+    )) or 0
+    shares = db.scalar(select(func.count()).select_from(VideoShare).where(
+        VideoShare.video_id == video_id
+    )) or 0
+    viewer_reaction = None
+    if user is not None:
+        viewer_reaction = db.scalar(select(VideoReaction.reaction).where(
+            VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
+        ))
+    return {
+        "likes": likes,
+        "dislikes": dislikes,
+        "comments": comments,
+        "shares": shares,
+        "views": accessible_video(video_id, db, user).view_count,
+        "viewer_reaction": viewer_reaction,
+    }
+
+
+@router.put("/videos/{video_id}/reaction")
+def set_reaction(
+    video_id: UUID,
+    payload: ReactionInput,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    accessible_video(video_id, db, user)
+    reaction = db.scalar(select(VideoReaction).where(
+        VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
+    ))
+    if payload.reaction is None:
+        if reaction is not None:
+            db.delete(reaction)
+    elif reaction is None:
+        db.add(VideoReaction(video_id=video_id, user_id=user.id, reaction=payload.reaction))
+    else:
+        reaction.reaction = payload.reaction
+    db.commit()
+    return get_engagement(video_id, db, user)
+
+
+@router.get("/videos/{video_id}/comments", response_model=CommentList)
+def list_comments(
+    video_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_current_user)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> CommentList:
+    accessible_video(video_id, db, user)
+    base = select(Comment).where(Comment.video_id == video_id).order_by(Comment.created_at.asc())
+    total = db.scalar(select(func.count(Comment.id)).where(Comment.video_id == video_id)) or 0
+    items = db.scalars(base.offset(offset).limit(limit)).all()
+    return CommentList(items=[serialize_comment(item) for item in items], total=total)
+
+
+@router.post("/videos/{video_id}/comments", response_model=CommentRead, status_code=201)
+def add_comment(
+    video_id: UUID,
+    payload: CommentInput,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CommentRead:
+    accessible_video(video_id, db, user)
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="Comment cannot be empty")
+    if payload.parent_id is not None:
+        parent = db.get(Comment, payload.parent_id)
+        if parent is None or parent.video_id != video_id or parent.parent_id is not None:
+            raise HTTPException(status_code=422, detail="Invalid parent comment")
+    comment = Comment(
+        video_id=video_id, user_id=user.id, parent_id=payload.parent_id, body=body
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return serialize_comment(comment)
+
+
+@router.patch("/comments/{comment_id}", response_model=CommentRead)
+def edit_comment(
+    comment_id: UUID,
+    payload: CommentInput,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CommentRead:
+    comment = db.get(Comment, comment_id)
+    if comment is None or comment.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="Comment cannot be empty")
+    comment.body = body
+    db.commit()
+    db.refresh(comment)
+    return serialize_comment(comment)
+
+
+@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_comment(
+    comment_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    comment = db.get(Comment, comment_id)
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    video = db.get(Video, comment.video_id)
+    if comment.user_id != user.id and (
+        video is None or video.channel.owner_id != user.id
+    ):
+        raise HTTPException(status_code=404, detail="Comment not found")
+    db.delete(comment)
+    db.commit()
+
+
+@router.post("/videos/{video_id}/share")
+def share_video(
+    video_id: UUID,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    accessible_video(video_id, db, user)
+    existing = db.get(VideoShare, (video_id, user.id))
+    if existing is None:
+        db.add(VideoShare(video_id=video_id, user_id=user.id))
+        db.commit()
+    shares = db.scalar(select(func.count()).select_from(VideoShare).where(
+        VideoShare.video_id == video_id
+    )) or 0
+    return {"shares": shares, "share_url": f"{str(request.base_url).rstrip('/')}/?video={video_id}"}
+
+
+@router.put("/channels/{handle}/subscription")
+def subscribe(
+    handle: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    channel = db.scalar(select(Channel).where(Channel.handle == handle))
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if channel.owner_id == user.id:
+        raise HTTPException(status_code=400, detail="You cannot subscribe to your own channel")
+    subscription = db.get(ChannelSubscription, (user.id, channel.id))
+    if subscription is None:
+        db.add(ChannelSubscription(subscriber_id=user.id, channel_id=channel.id))
+        db.commit()
+    return subscription_status(handle, db, user)
+
+
+@router.delete("/channels/{handle}/subscription")
+def unsubscribe(
+    handle: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    channel = db.scalar(select(Channel).where(Channel.handle == handle))
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    subscription = db.get(ChannelSubscription, (user.id, channel.id))
+    if subscription is not None:
+        db.delete(subscription)
+        db.commit()
+    return subscription_status(handle, db, user)
+
+
+@router.get("/channels/{handle}/subscription")
+def subscription_status(
+    handle: str,
+    db: Session,
+    user: User | None,
+) -> dict:
+    channel = db.scalar(select(Channel).where(Channel.handle == handle))
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    subscribers = db.scalar(select(func.count()).select_from(ChannelSubscription).where(
+        ChannelSubscription.channel_id == channel.id
+    )) or 0
+    subscribed = False
+    if user is not None:
+        subscribed = db.get(ChannelSubscription, (user.id, channel.id)) is not None
+    return {"subscribed": subscribed, "subscribers": subscribers}
