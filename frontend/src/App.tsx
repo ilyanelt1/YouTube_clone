@@ -22,7 +22,7 @@ type Video = {
   thumbnail_url: string | null;
 };
 
-type Engagement = { likes: number; dislikes: number; comments: number; shares: number; views: number; viewer_reaction: "like" | "dislike" | null };
+type Engagement = { likes: number; dislikes: number; comments: number; shares: number; reposts: number; viewer_reposted: boolean; views: number; viewer_reaction: "like" | "dislike" | null };
 
 type SocialComment = { id: string; video_id: string; parent_id: string | null; body: string; author_name: string; author_handle: string; created_at: string; updated_at: string };
 
@@ -237,6 +237,18 @@ export default function App() {
       setEngagement((current) => current ? { ...current, comments: Math.max(0, current.comments - removedCount) } : current);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось удалить комментарий");
+    }
+  }
+
+  async function toggleRepost() {
+    if (!selected) return;
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const method = engagement?.viewer_reposted ? "DELETE" : "PUT";
+      const result = await api<Engagement>(`/videos/${selected.id}/repost`, { method }, token);
+      setEngagement(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сделать репост");
     }
   }
 
@@ -467,6 +479,7 @@ export default function App() {
                 <button className={engagement?.viewer_reaction === "like" ? "social-button active" : "social-button"} onClick={() => void setVideoReaction("like")} aria-label="Нравится">👍 {engagement?.likes ?? 0}</button>
                 <button className={engagement?.viewer_reaction === "dislike" ? "social-button active" : "social-button"} onClick={() => void setVideoReaction("dislike")} aria-label="Не нравится">👎 {engagement?.dislikes ?? 0}</button>
               </div>
+              <button className={engagement?.viewer_reposted ? "social-button active" : "social-button"} onClick={() => void toggleRepost()}>🔁 Репост · {engagement?.reposts ?? 0}</button>
               <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>
               <span className="social-muted">◉ {engagement?.views ?? 0} просмотров</span>
             </div>
