@@ -126,6 +126,7 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest" | "popular">("newest");
   const [durationFilter, setDurationFilter] = useState<"" | "short" | "long">("");
+  const [channelFilter, setChannelFilter] = useState("");
   const [saved, setSaved] = useState(false);
 
   const loadVideos = useCallback(async (
@@ -137,7 +138,7 @@ export default function App() {
       const params = new URLSearchParams();
       if (search.trim()) params.set("q", search.trim());
       params.set("sort", sort);
-      if (duration) params.set("duration", duration);
+      if (duration) params.set("duration", duration);\n      if (channel) params.set("channel", channel);
       const result = await api<{ items: Video[]; total: number }>(`/videos?${params.toString()}`);
       setVideos(result.items);
     } catch (err) {
@@ -573,7 +574,7 @@ export default function App() {
     setSelected(null);
     setShowLibrary(false);
     setPage("home");
-    void loadVideos(query, sortOrder, durationFilter);
+    void loadVideos(query, sortOrder, durationFilter, channelFilter);
   }
 
   function closeUpload() {
@@ -786,8 +787,9 @@ export default function App() {
               <span className="result-count">{videos.length} видео</span>
             </div>
             {page === "home" && <div className="video-filters">
-              <label>Сортировка<select value={sortOrder} onChange={(event) => { const value = event.target.value as typeof sortOrder; setSortOrder(value); void loadVideos(query, value, durationFilter); }}><option value="newest">Сначала новые</option><option value="popular">Популярные</option><option value="oldest">Сначала старые</option></select></label>
-              <label>Длительность<select value={durationFilter} onChange={(event) => { const value = event.target.value as typeof durationFilter; setDurationFilter(value); void loadVideos(query, sortOrder, value); }}><option value="">Любая</option><option value="short">До 4 минут</option><option value="long">От 4 минут</option></select></label>
+              <label>Сортировка<select value={sortOrder} onChange={(event) => { const value = event.target.value as typeof sortOrder; setSortOrder(value); void loadVideos(query, value, durationFilter, channelFilter); }}><option value="newest">Сначала новые</option><option value="popular">Популярные</option><option value="oldest">Сначала старые</option></select></label>
+              <label>Длительность<select value={durationFilter} onChange={(event) => { const value = event.target.value as typeof durationFilter; setDurationFilter(value); void loadVideos(query, sortOrder, value, channelFilter); }}><option value="">Любая</option><option value="short">До 4 минут</option><option value="long">От 4 минут</option></select></label>
+              <label>Канал<select value={channelFilter} onChange={(event) => { const value = event.target.value; setChannelFilter(value); void loadVideos(query, sortOrder, durationFilter, value); }}><option value="">Все каналы</option>{Array.from(new Map(videos.map((video) => [video.channel_handle, video.channel_name])).entries()).map(([handle, name]) => <option key={handle} value={handle}>{name}</option>)}</select></label>
             </div>}
             {page === "history" && <button className="small-button danger-button" onClick={async () => { if (!token || !window.confirm("Очистить историю просмотров?")) return; try { await api("/users/me/history", { method: "DELETE" }, token); setVideos([]); } catch (err) { setError(err instanceof Error ? err.message : "Не удалось очистить историю"); } }}>Очистить историю</button>}
             {videos.length ? (
