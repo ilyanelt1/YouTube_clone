@@ -198,6 +198,7 @@ export default function App() {
     setUploadProgress(0);
     setError("");
     const form = new FormData(event.currentTarget);
+    if (!selectedThumbnail) form.delete("thumbnail");
     try {
       await uploadWithProgress(form, token, setUploadProgress);
       setUploadOpen(false);
