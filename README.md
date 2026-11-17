@@ -16,7 +16,7 @@ A YouTube-inspired video hosting MVP built with FastAPI, PostgreSQL, S3-compatib
 - Browser upload progress indicator.
 - HTTP byte-range streaming for playback and seeking.
 - Video likes/dislikes, threaded comments, comment moderation by authors and channel owners.
-- Share links with unique per-user share counts, playback view counters and channel subscriptions.
+- Video reposts with per-user duplicate protection, share links with unique per-user share counts, playback view counters and channel subscriptions.
 - Docker Compose services for PostgreSQL 17, Redis, S3-compatible storage, backend and frontend.
 
 ## Stack
@@ -69,6 +69,7 @@ Python 3.14, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 17, boto3, S3-compatible
 - `GET /api/v1/videos/{id}/comments` — list comments and replies.
 - `POST /api/v1/videos/{id}/comments` — add a comment; optional `parent_id` creates a reply.
 - `PATCH /api/v1/comments/{id}` / `DELETE /api/v1/comments/{id}` — edit or delete your own comment; video owners can moderate comments under their videos.
+- `PUT` / `DELETE /api/v1/videos/{id}/repost` — repost a video or undo your repost.
 - `POST /api/v1/videos/{id}/share` — create a unique share record and return a deep link.
 - `POST /api/v1/videos/{id}/view` — increment the playback view counter.
 - `GET /api/v1/channels/{handle}/subscription` — subscription state and subscriber count.
@@ -93,4 +94,4 @@ docker compose down
 
 ## Current MVP limitations
 
-Video transcoding, automatic cover generation, resumable/chunked uploads, upload cancellation, playlists, notifications and background processing are not implemented yet. Covers can be uploaded manually. Social features are an MVP: view counts are incremented when the watch page opens, and share counts track unique signed-in users rather than external share destinations. Do not expose the storage console or database publicly. For an Internet-facing deployment, put HTTPS in front of the frontend and configure firewall rules and backups.
+Video transcoding, automatic cover generation, resumable/chunked uploads, upload cancellation, playlists, notifications and background processing are not implemented yet. Covers can be uploaded manually. Social features are an MVP: view counts are incremented when the watch page opens, and share counts track unique signed-in users rather than external share destinations. Reposts are recorded as channel activity but are not yet shown in a dedicated public repost feed. Do not expose the storage console or database publicly. For an Internet-facing deployment, put HTTPS in front of the frontend and configure firewall rules and backups.
