@@ -192,6 +192,15 @@ export default function App() {
   }, [selected?.id, token, user?.id]);
 
   useEffect(() => {
+    if (!selected || !token) { setSaved(false); return; }
+    let active = true;
+    api<{ items: Video[] }>("/users/me/favorites", {}, token)
+      .then((result) => { if (active) setSaved(result.items.some((video) => video.id === selected.id)); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [selected?.id, token]);
+
+  useEffect(() => {
     const videoId = new URLSearchParams(window.location.search).get("video");
     if (!videoId) return;
     api<Video>(`/videos/${videoId}`)
@@ -563,7 +572,8 @@ export default function App() {
     event.preventDefault();
     setSelected(null);
     setShowLibrary(false);
-    void loadVideos(query);
+    setPage("home");
+    void loadVideos(query, sortOrder, durationFilter);
   }
 
   function closeUpload() {
@@ -772,9 +782,14 @@ export default function App() {
         ) : (
           <>
             <div className="section-heading">
-              <div><p className="eyebrow">СМОТРИ И ДЕЛИСЬ</p><h1>Видео для тебя</h1></div>
+              <div><p className="eyebrow">СМОТРИ И ДЕЛИСЬ</p><h1>{page === "subscriptions" ? "Новые видео подписок" : page === "history" ? "История просмотров" : page === "favorites" ? "Избранное" : "Видео для тебя"}</h1></div>
               <span className="result-count">{videos.length} видео</span>
             </div>
+            {page === "home" && <div className="video-filters">
+              <label>Сортировка<select value={sortOrder} onChange={(event) => { const value = event.target.value as typeof sortOrder; setSortOrder(value); void loadVideos(query, value, durationFilter); }}><option value="newest">Сначала новые</option><option value="popular">Популярные</option><option value="oldest">Сначала старые</option></select></label>
+              <label>Длительность<select value={durationFilter} onChange={(event) => { const value = event.target.value as typeof durationFilter; setDurationFilter(value); void loadVideos(query, sortOrder, value); }}><option value="">Любая</option><option value="short">До 4 минут</option><option value="long">От 4 минут</option></select></label>
+            </div>}
+            {page === "history" && <button className="small-button danger-button" onClick={async () => { if (!token || !window.confirm("Очистить историю просмотров?")) return; try { await api("/users/me/history", { method: "DELETE" }, token); setVideos([]); } catch (err) { setError(err instanceof Error ? err.message : "Не удалось очистить историю"); } }}>Очистить историю</button>}
             {videos.length ? (
               <div className="video-grid">
                 {videos.map((video) => (
