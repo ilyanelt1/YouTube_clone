@@ -127,7 +127,7 @@ def test_upload_requires_authentication() -> None:
         close_client(client, engine)
 
 
-def test_upload_rejects_invalid_video_signature(monkeypatch) -> None:
+def test_upload_rejects_invalid_video_signature() -> None:
     client, engine = make_client()
     try:
         token = register_user(client)
