@@ -2,6 +2,7 @@ from functools import lru_cache
 
 import boto3
 from botocore.client import Config
+from botocore.exceptions import ClientError
 
 from app.core.config import get_settings
 
@@ -25,7 +26,7 @@ def ensure_video_bucket() -> None:
     client = get_s3_client()
     try:
         client.head_bucket(Bucket=VIDEO_BUCKET)
-    except client.exceptions.ClientError as exc:
+    except ClientError as exc:
         status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
         error_code = exc.response.get("Error", {}).get("Code")
         if status_code != 404 and error_code not in {"NoSuchBucket", "NotFound"}:
@@ -43,10 +44,13 @@ def upload_video(file_obj, object_key: str, content_type: str) -> None:
     )
 
 
-def create_playback_url(object_key: str) -> str:
+def get_video_object(object_key: str, byte_range: str | None = None) -> dict:
     ensure_video_bucket()
-    return get_s3_client().generate_presigned_url(
-        "get_object",
-        Params={"Bucket": VIDEO_BUCKET, "Key": object_key},
-        ExpiresIn=3600,
-    )
+    client = get_s3_client()
+    metadata = client.head_object(Bucket=VIDEO_BUCKET, Key=object_key)
+    params = {"Bucket": VIDEO_BUCKET, "Key": object_key}
+    if byte_range:
+        params["Range"] = byte_range
+    result = client.get_object(**params)
+    result["TotalLength"] = metadata["ContentLength"]
+    return result
