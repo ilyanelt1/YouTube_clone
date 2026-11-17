@@ -11,11 +11,15 @@ type Video = {
   id: string;
   title: string;
   description: string | null;
+  status: string;
+  visibility: "public" | "unlisted" | "private";
   channel_name: string;
   channel_handle: string;
   created_at: string;
   file_size_bytes: number | null;
+  mime_type: string | null;
   playback_url: string;
+  thumbnail_url: string | null;
 };
 
 type AuthResponse = {
@@ -24,6 +28,8 @@ type AuthResponse = {
 };
 
 const API = "/api/v1";
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
+const MAX_THUMBNAIL_SIZE = 5 * 1024 * 1024;
 
 async function api<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(options.headers);
@@ -41,8 +47,43 @@ async function api<T>(path: string, options: RequestInit = {}, token?: string): 
   return response.json() as Promise<T>;
 }
 
+function uploadWithProgress(
+  form: FormData,
+  token: string,
+  onProgress: (value: number) => void,
+): Promise<Video> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API}/videos/upload`);
+    request.withCredentials = true;
+    request.setRequestHeader("Authorization", `Bearer ${token}`);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      }
+    };
+    request.onload = () => {
+      const payload = JSON.parse(request.responseText || "{}");
+      if (request.status >= 200 && request.status < 300) {
+        resolve(payload as Video);
+      } else {
+        reject(new Error(payload.detail ?? `Upload failed: ${request.status}`));
+      }
+    };
+    request.onerror = () => reject(new Error("Network error while uploading video"));
+    request.onabort = () => reject(new Error("Upload cancelled"));
+    request.send(form);
+  });
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function App() {
   const [videos, setVideos] = useState<Video[]>([]);
+  const [myVideos, setMyVideos] = useState<Video[]>([]);
   const [selected, setSelected] = useState<Video | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -52,6 +93,14 @@ export default function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [editingVideo, setEditingVideo] = useState<Video | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editVisibility, setEditVisibility] = useState<Video["visibility"]>("public");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedThumbnail, setSelectedThumbnail] = useState<File | null>(null);
 
   const loadVideos = useCallback(async (search = "") => {
     try {
@@ -64,15 +113,21 @@ export default function App() {
     }
   }, []);
 
+  const loadMyVideos = useCallback(async (accessToken: string) => {
+    const result = await api<{ items: Video[]; total: number }>("/videos/mine", {}, accessToken);
+    setMyVideos(result.items);
+  }, []);
+
   useEffect(() => {
     void loadVideos();
     api<AuthResponse>("/auth/refresh", { method: "POST" })
       .then((result) => {
         setToken(result.access_token);
         setUser(result.user);
+        void loadMyVideos(result.access_token).catch(() => undefined);
       })
       .catch(() => undefined);
-  }, [loadVideos]);
+  }, [loadVideos, loadMyVideos]);
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -99,6 +154,7 @@ export default function App() {
       setToken(result.access_token);
       setUser(result.user);
       setShowAuth(false);
+      await loadMyVideos(result.access_token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка авторизации");
     } finally {
@@ -112,24 +168,100 @@ export default function App() {
     } finally {
       setToken(null);
       setUser(null);
+      setMyVideos([]);
       setUploadOpen(false);
+      setShowLibrary(false);
     }
   }
 
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
+    if (!selectedFile) {
+      setError("Выбери видеофайл для загрузки");
+      return;
+    }
+    if (!["video/mp4", "video/webm", "video/quicktime"].includes(selectedFile.type)) {
+      setError("Поддерживаются только MP4, WebM и MOV");
+      return;
+    }
+    if (selectedFile.size > MAX_VIDEO_SIZE) {
+      setError("Размер видео не должен превышать 500 МБ");
+      return;
+    }
+    if (selectedThumbnail && selectedThumbnail.size > MAX_THUMBNAIL_SIZE) {
+      setError("Размер обложки не должен превышать 5 МБ");
+      return;
+    }
+
     setBusy(true);
+    setUploadProgress(0);
     setError("");
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
+    const form = new FormData(event.currentTarget);
     try {
-      await api<Video>("/videos/upload", { method: "POST", body: form }, token);
+      await uploadWithProgress(form, token, setUploadProgress);
       setUploadOpen(false);
-      formElement.reset();
-      await loadVideos(query);
+      setSelectedFile(null);
+      setSelectedThumbnail(null);
+      setUploadProgress(null);
+      await Promise.all([loadVideos(query), loadMyVideos(token)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
+      setUploadProgress(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openEditor(video: Video) {
+    setEditingVideo(video);
+    setEditTitle(video.title);
+    setEditDescription(video.description ?? "");
+    setEditVisibility(video.visibility);
+  }
+
+  async function saveVideo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !editingVideo) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api<Video>(
+        `/videos/${editingVideo.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: editTitle,
+            description: editDescription,
+            visibility: editVisibility,
+          }),
+        },
+        token,
+      );
+      setEditingVideo(null);
+      await Promise.all([loadVideos(query), loadMyVideos(token)]);
+      if (selected?.id === editingVideo.id) {
+        const updated = await api<Video>(`/videos/${editingVideo.id}`, {}, token);
+        setSelected(updated);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить изменения");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeVideo(video: Video) {
+    if (!token || !window.confirm(`Удалить видео «${video.title}»? Это действие нельзя отменить.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api<void>(`/videos/${video.id}`, { method: "DELETE" }, token);
+      if (selected?.id === video.id) setSelected(null);
+      await Promise.all([loadVideos(query), loadMyVideos(token)]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить видео");
     } finally {
       setBusy(false);
     }
@@ -138,13 +270,22 @@ export default function App() {
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSelected(null);
+    setShowLibrary(false);
     void loadVideos(query);
+  }
+
+  function closeUpload() {
+    if (busy) return;
+    setUploadOpen(false);
+    setUploadProgress(null);
+    setSelectedFile(null);
+    setSelectedThumbnail(null);
   }
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => { setSelected(null); void loadVideos(); }}>
+        <button className="brand" onClick={() => { setSelected(null); setShowLibrary(false); void loadVideos(); }}>
           <span className="brand-mark">▶</span><span>YouTube<span className="brand-light"> Clone</span></span>
         </button>
         <form className="search" onSubmit={search}>
@@ -155,7 +296,8 @@ export default function App() {
           {user ? (
             <>
               <span className="user-label">{user.display_name}</span>
-              <button className="outline-button" onClick={() => setUploadOpen(true)}>＋ Загрузить</button>
+              <button className="outline-button" onClick={() => { setShowLibrary(true); setSelected(null); }}>Мои видео</button>
+              <button className="outline-button" onClick={() => { setUploadOpen(true); setError(""); }}>＋ Загрузить</button>
               <button className="icon-button" onClick={() => void logout()} title="Выйти">↗</button>
             </>
           ) : (
@@ -168,12 +310,42 @@ export default function App() {
         {error && <div className="error-banner">{error}<button onClick={() => setError("")}>×</button></div>}
         {selected ? (
           <section className="watch-layout">
-            <button className="back-link" onClick={() => setSelected(null)}>← Назад к видео</button>
+            <button className="back-link" onClick={() => setSelected(null)}>← Назад</button>
             <video className="player" src={selected.playback_url} controls autoPlay playsInline />
             <h1>{selected.title}</h1>
-            <div className="video-meta">{selected.channel_name} · @{selected.channel_handle}</div>
+            <div className="video-meta">{selected.channel_name} · @{selected.channel_handle} · {new Date(selected.created_at).toLocaleDateString("ru-RU")}</div>
             {selected.description && <p className="description">{selected.description}</p>}
           </section>
+        ) : showLibrary ? (
+          <>
+            <div className="section-heading">
+              <div><p className="eyebrow">ТВОЙ КАНАЛ</p><h1>Мои видео</h1></div>
+              <span className="result-count">{myVideos.length} видео</span>
+            </div>
+            {myVideos.length ? (
+              <div className="video-grid">
+                {myVideos.map((video) => (
+                  <article className="video-card managed-video" key={video.id}>
+                    <button className="video-card-open" onClick={() => setSelected(video)}>
+                      <div className="thumbnail">
+                        {video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}
+                      </div>
+                      <div className="video-card-info">
+                        <div className="channel-avatar">{video.title.slice(0, 1).toUpperCase()}</div>
+                        <div><h2>{video.title}</h2><p>{video.visibility === "public" ? "Открытый доступ" : video.visibility === "unlisted" ? "Доступ по ссылке" : "Приватное"}</p><p>{formatSize(video.file_size_bytes ?? 0)}</p></div>
+                      </div>
+                    </button>
+                    <div className="video-actions">
+                      <button className="small-button" onClick={() => openEditor(video)}>Изменить</button>
+                      <button className="small-button danger-button" disabled={busy} onClick={() => void removeVideo(video)}>Удалить</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state"><div className="empty-icon">▷</div><h2>Ты ещё не загрузил видео</h2><p>Загруженные ролики появятся здесь.</p><button className="primary-button" onClick={() => setUploadOpen(true)}>Загрузить первое видео</button></div>
+            )}
+          </>
         ) : (
           <>
             <div className="section-heading">
@@ -184,7 +356,9 @@ export default function App() {
               <div className="video-grid">
                 {videos.map((video) => (
                   <button className="video-card" key={video.id} onClick={() => setSelected(video)}>
-                    <div className="thumbnail"><span className="play-icon">▶</span><span className="duration-label">PLAY</span></div>
+                    <div className="thumbnail">
+                      {video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}
+                    </div>
                     <div className="video-card-info">
                       <div className="channel-avatar">{video.channel_name.slice(0, 1).toUpperCase()}</div>
                       <div><h2>{video.title}</h2><p>{video.channel_name}</p><p>{new Date(video.created_at).toLocaleDateString("ru-RU")}</p></div>
@@ -230,16 +404,57 @@ export default function App() {
       )}
 
       {uploadOpen && (
-        <div className="modal-backdrop" onClick={() => setUploadOpen(false)}>
-          <section className="modal" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => setUploadOpen(false)}>×</button>
+        <div className="modal-backdrop" onClick={closeUpload}>
+          <section className="modal upload-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={closeUpload}>×</button>
             <h2>Загрузить видео</h2>
-            <p className="muted">MP4, WebM или MOV · до 500 МБ</p>
+            <p className="muted">MP4, WebM или MOV · до 500 МБ. Обложка — JPEG, PNG или WebP до 5 МБ.</p>
             <form className="stack-form" onSubmit={submitUpload}>
               <input name="title" placeholder="Название видео" maxLength={120} required />
-              <textarea name="description" placeholder="Описание (необязательно)" rows={4} />
-              <label className="file-picker">Выбрать видео<input name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required /></label>
-              <button className="primary-button" disabled={busy}>{busy ? "Загрузка..." : "Опубликовать"}</button>
+              <textarea name="description" placeholder="Описание видео" rows={4} maxLength={5000} />
+              <label className="field-label">Кто сможет смотреть?
+                <select name="visibility" defaultValue="public">
+                  <option value="public">Открытый доступ — в общем каталоге</option>
+                  <option value="unlisted">Доступ по ссылке — скрыто из каталога</option>
+                  <option value="private">Приватное — только владелец</option>
+                </select>
+              </label>
+              <label className="file-picker">Выбрать видеофайл
+                <input name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+                {selectedFile && <span className="file-info">{selectedFile.name} · {formatSize(selectedFile.size)}</span>}
+              </label>
+              <label className="file-picker">Обложка (необязательно)
+                <input name="thumbnail" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setSelectedThumbnail(event.target.files?.[0] ?? null)} />
+                {selectedThumbnail && <span className="file-info">{selectedThumbnail.name} · {formatSize(selectedThumbnail.size)}</span>}
+              </label>
+              {uploadProgress !== null && (
+                <div className="upload-progress">
+                  <div className="progress-heading"><span>Загрузка файла</span><strong>{uploadProgress}%</strong></div>
+                  <progress value={uploadProgress} max="100" />
+                </div>
+              )}
+              <button className="primary-button" disabled={busy}>{busy ? "Загрузка..." : "Опубликовать видео"}</button>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {editingVideo && (
+        <div className="modal-backdrop" onClick={() => !busy && setEditingVideo(null)}>
+          <section className="modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={() => setEditingVideo(null)}>×</button>
+            <h2>Изменить видео</h2>
+            <form className="stack-form" onSubmit={saveVideo}>
+              <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} maxLength={120} required />
+              <textarea value={editDescription} onChange={(event) => setEditDescription(event.target.value)} rows={4} maxLength={5000} placeholder="Описание" />
+              <label className="field-label">Видимость
+                <select value={editVisibility} onChange={(event) => setEditVisibility(event.target.value as Video["visibility"])}>
+                  <option value="public">Открытый доступ</option>
+                  <option value="unlisted">Доступ по ссылке</option>
+                  <option value="private">Приватное</option>
+                </select>
+              </label>
+              <button className="primary-button" disabled={busy}>{busy ? "Сохранение..." : "Сохранить изменения"}</button>
             </form>
           </section>
         </div>
