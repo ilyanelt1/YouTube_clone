@@ -416,11 +416,14 @@ def list_notifications(
         .order_by(Notification.created_at.desc())
         .limit(limit)
     ).all()
-    unread = db.scalar(
-        select(func.count()).select_from(Notification).where(
-            Notification.recipient_id == user.id, Notification.read_at.is_(None)
+    unread = (
+        db.scalar(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.recipient_id == user.id, Notification.read_at.is_(None))
         )
-    ) or 0
+        or 0
+    )
     return {
         "items": [
             {
