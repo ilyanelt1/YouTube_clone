@@ -14,7 +14,7 @@ from app.models import Role
 
 class FakeStreamingBody:
     def iter_chunks(self, chunk_size: int = 1024 * 1024):
-        yield b"test"
+        yield b"te"
 
 
 def make_client() -> tuple[TestClient, sa.Engine]:
