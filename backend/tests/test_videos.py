@@ -11,8 +11,8 @@ from app.db.session import get_db
 from app.main import app
 from app.models import Role
 
-VALID_MP4 = b"\\x00\\x00\\x00\\x18ftypisomvideo-data"
-VALID_PNG = b"\\x89PNG\\r\\n\\x1a\\n" + b"\\x00" * 8
+VALID_MP4 = b"\x00\x00\x00\x18ftypisomvideo-data"
+VALID_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
 
 
 class FakeStreamingBody:
