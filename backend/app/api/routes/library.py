@@ -182,9 +182,7 @@ def get_watch_history(
     access_filter = or_(
         Video.visibility != "private",
         Channel.owner_id == user.id,
-        Video.id.in_(
-            select(VideoAccessGrant.video_id).where(VideoAccessGrant.user_id == user.id)
-        ),
+        Video.id.in_(select(VideoAccessGrant.video_id).where(VideoAccessGrant.user_id == user.id)),
     )
     history_filters = (
         VideoViewHistory.user_id == user.id,
