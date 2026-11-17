@@ -26,6 +26,11 @@ type Engagement = { likes: number; dislikes: number; comments: number; shares: n
 
 type SocialComment = { id: string; video_id: string; parent_id: string | null; body: string; author_name: string; author_handle: string; created_at: string; updated_at: string };
 
+type ChannelPage = { handle: string; name: string; description: string | null; subscribers: number; subscribed: boolean; videos: { items: Video[]; total: number } };
+type PlaylistSummary = { id: string; title: string; description: string | null; visibility: "public" | "unlisted" | "private"; video_count: number };
+type PlaylistDetails = PlaylistSummary & { videos: { items: Video[]; total: number } };
+type NotificationItem = { id: string; kind: string; message: string; video_id: string | null; comment_id: string | null; read: boolean; created_at: string };
+
 type AuthResponse = {
   access_token: string;
   user: User;
@@ -111,12 +116,32 @@ export default function App() {
   const [editDescription, setEditDescription] = useState("");
   const [editVisibility, setEditVisibility] = useState<Video["visibility"]>("public");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<File | null>(null);
+  const [page, setPage] = useState<"home" | "subscriptions" | "history" | "favorites" | "channel" | "playlists">("home");
+  const [channelPage, setChannelPage] = useState<ChannelPage | null>(null);
+  const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<PlaylistDetails | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest" | "popular">("newest");
+  const [durationFilter, setDurationFilter] = useState<"" | "short" | "long">("");
+  const [channelFilter, setChannelFilter] = useState("");
+  const [saved, setSaved] = useState(false);
 
-  const loadVideos = useCallback(async (search = "") => {
+  const loadVideos = useCallback(async (
+    search = "",
+    sort: "newest" | "oldest" | "popular" = "newest",
+    duration: "" | "short" | "long" = "",
+    channel: string = "",
+  ) => {
     try {
       const params = new URLSearchParams();
       if (search.trim()) params.set("q", search.trim());
+      params.set("sort", sort);
+      if (duration) params.set("duration", duration);
+      if (channel) params.set("channel", channel);
       const result = await api<{ items: Video[]; total: number }>(`/videos?${params.toString()}`);
       setVideos(result.items);
     } catch (err) {
@@ -171,12 +196,162 @@ export default function App() {
   }, [selected?.id, token, user?.id]);
 
   useEffect(() => {
+    if (!selected || !token) { setSaved(false); return; }
+    let active = true;
+    api<{ items: Video[] }>("/users/me/favorites", {}, token)
+      .then((result) => { if (active) setSaved(result.items.some((video) => video.id === selected.id)); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [selected?.id, token]);
+
+  useEffect(() => {
+    if (!token) { setUnreadNotifications(0); return; }
+    let active = true;
+    api<{ unread_count: number }>("/notifications", {}, token)
+      .then((result) => { if (active) setUnreadNotifications(result.unread_count); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [token]);
+
+  useEffect(() => {
     const videoId = new URLSearchParams(window.location.search).get("video");
     if (!videoId) return;
     api<Video>(`/videos/${videoId}`)
       .then(setSelected)
       .catch(() => setError("Видео по ссылке не найдено или недоступно"));
   }, []);
+
+  async function loadSubscriptionFeed() {
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const result = await api<{ items: Video[]; total: number }>("/feed/subscriptions", {}, token);
+      setVideos(result.items); setPage("subscriptions"); setSelected(null); setShowLibrary(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось загрузить ленту подписок"); }
+  }
+
+  async function loadPersonalVideos(section: "history" | "favorites") {
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const path = section === "history" ? "/users/me/history" : "/users/me/favorites";
+      const result = await api<{ items: Video[]; total: number }>(path, {}, token);
+      setVideos(result.items); setPage(section); setSelected(null); setShowLibrary(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось загрузить раздел"); }
+  }
+
+  async function loadChannel(handle: string) {
+    try {
+      const result = await api<ChannelPage>(`/channels/${encodeURIComponent(handle)}`, {}, token ?? undefined);
+      setChannelPage(result); setVideos(result.videos.items); setPage("channel");
+      setSelected(null); setShowLibrary(false); setShowNotifications(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось открыть канал"); }
+  }
+
+  async function loadPlaylists() {
+    if (!token) { setShowAuth(true); return; }
+    try {
+      const result = await api<PlaylistSummary[]>("/playlists/mine", {}, token);
+      setPlaylists(result); setSelectedPlaylist(null); setPage("playlists");
+      setSelected(null); setShowLibrary(false);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось загрузить плейлисты"); }
+  }
+
+  async function openPlaylist(playlist: PlaylistSummary) {
+    if (!token) return;
+    try {
+      const result = await api<PlaylistDetails>(`/playlists/${playlist.id}`, {}, token);
+      setSelectedPlaylist(result); setVideos(result.videos.items);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось открыть плейлист"); }
+  }
+
+  async function createPlaylist() {
+    if (!token) { setShowAuth(true); return; }
+    const title = window.prompt("Название нового плейлиста");
+    if (!title?.trim()) return;
+    try {
+      await api<PlaylistSummary>("/playlists", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim(), visibility: "private" }),
+      }, token);
+      await loadPlaylists();
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось создать плейлист"); }
+  }
+
+  async function updatePlaylistVisibility(playlist: PlaylistSummary) {
+    if (!token) return;
+    const visibility = playlist.visibility === "public" ? "private" : "public";
+    try {
+      const updated = await api<PlaylistSummary>(`/playlists/${playlist.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility }),
+      }, token);
+      setPlaylists((current) => current.map((item) => item.id === playlist.id ? updated : item));
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось изменить доступ к плейлисту"); }
+  }
+
+  async function deletePlaylist(playlist: PlaylistSummary) {
+    if (!token || !window.confirm(`Удалить плейлист «${playlist.title}»?`)) return;
+    try {
+      await api(`/playlists/${playlist.id}`, { method: "DELETE" }, token);
+      setPlaylists((current) => current.filter((item) => item.id !== playlist.id));
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось удалить плейлист"); }
+  }
+
+  async function addCurrentToPlaylist() {
+    if (!selected || !token) { setShowAuth(true); return; }
+    try {
+      const available = await api<PlaylistSummary[]>("/playlists/mine", {}, token);
+      if (!available.length) {
+        if (window.confirm("У тебя пока нет плейлистов. Создать первый?")) await createPlaylist();
+        return;
+      }
+      const choice = window.prompt(`Введи номер плейлиста:\n${available.map((item, index) => `${index + 1}. ${item.title}`).join("\n")}`);
+      const index = Number(choice) - 1;
+      if (!Number.isInteger(index) || index < 0 || index >= available.length) return;
+      await api(`/playlists/${available[index].id}/videos/${selected.id}`, { method: "POST" }, token);
+      setError("Видео добавлено в плейлист");
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось добавить видео в плейлист"); }
+  }
+
+  async function toggleFavorite() {
+    if (!selected || !token) { setShowAuth(true); return; }
+    try {
+      const method = saved ? "DELETE" : "PUT";
+      await api(`/videos/${selected.id}/favorite`, { method }, token);
+      setSaved(!saved);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось изменить избранное"); }
+  }
+
+  async function toggleNotifications() {
+    if (!token) { setShowAuth(true); return; }
+    if (showNotifications) { setShowNotifications(false); return; }
+    try {
+      const result = await api<{ items: NotificationItem[]; unread_count: number }>("/notifications", {}, token);
+      setNotifications(result.items); setUnreadNotifications(result.unread_count); setShowNotifications(true);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось загрузить уведомления"); }
+  }
+
+  async function openNotification(item: NotificationItem) {
+    if (!token) return;
+    try {
+      await api(`/notifications/${item.id}/read`, { method: "POST" }, token);
+      setNotifications((current) => current.map((entry) => entry.id === item.id ? { ...entry, read: true } : entry));
+      setUnreadNotifications((count) => Math.max(0, count - (item.read ? 0 : 1)));
+      setShowNotifications(false);
+      if (item.video_id) {
+        const video = await api<Video>(`/videos/${item.video_id}`, {}, token);
+        setSelected(video);
+      }
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось открыть уведомление"); }
+  }
+
+  async function markAllNotificationsRead() {
+    if (!token) return;
+    try {
+      await api("/notifications/read-all", { method: "POST" }, token);
+      setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+      setUnreadNotifications(0);
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось отметить уведомления"); }
+  }
 
   async function setVideoReaction(reaction: "like" | "dislike") {
     if (!selected) return;
@@ -332,6 +507,21 @@ export default function App() {
     }
   }
 
+  function inspectVideoFile(file: File | null) {
+    setSelectedFile(file);
+    setSelectedDuration(null);
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    const probe = document.createElement("video");
+    probe.preload = "metadata";
+    probe.onloadedmetadata = () => {
+      if (Number.isFinite(probe.duration)) setSelectedDuration(Math.round(probe.duration));
+      URL.revokeObjectURL(objectUrl);
+    };
+    probe.onerror = () => URL.revokeObjectURL(objectUrl);
+    probe.src = objectUrl;
+  }
+
   async function submitUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
@@ -356,14 +546,16 @@ export default function App() {
     setUploadProgress(0);
     setError("");
     const form = new FormData(event.currentTarget);
+    if (selectedDuration !== null) form.set("duration_seconds", String(selectedDuration));
     if (!selectedThumbnail) form.delete("thumbnail");
     try {
       await uploadWithProgress(form, token, setUploadProgress);
       setUploadOpen(false);
       setSelectedFile(null);
+      setSelectedDuration(null);
       setSelectedThumbnail(null);
       setUploadProgress(null);
-      await Promise.all([loadVideos(query), loadMyVideos(token)]);
+      await Promise.all([loadVideos(query, sortOrder, durationFilter), loadMyVideos(token)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
       setUploadProgress(null);
@@ -399,7 +591,7 @@ export default function App() {
         token,
       );
       setEditingVideo(null);
-      await Promise.all([loadVideos(query), loadMyVideos(token)]);
+      await Promise.all([loadVideos(query, sortOrder, durationFilter), loadMyVideos(token)]);
       if (selected?.id === editingVideo.id) {
         const updated = await api<Video>(`/videos/${editingVideo.id}`, {}, token);
         setSelected(updated);
@@ -430,7 +622,8 @@ export default function App() {
     event.preventDefault();
     setSelected(null);
     setShowLibrary(false);
-    void loadVideos(query);
+    setPage("home");
+    void loadVideos(query, sortOrder, durationFilter, channelFilter.trim().replace(/^@/, ""));
   }
 
   function closeUpload() {
@@ -438,13 +631,14 @@ export default function App() {
     setUploadOpen(false);
     setUploadProgress(null);
     setSelectedFile(null);
+    setSelectedDuration(null);
     setSelectedThumbnail(null);
   }
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => { setSelected(null); setShowLibrary(false); void loadVideos(); }}>
+        <button className="brand" onClick={() => { setSelected(null); setShowLibrary(false); setPage("home"); setChannelPage(null); setSelectedPlaylist(null); void loadVideos(); }}>
           <span className="brand-mark">▶</span><span>YouTube<span className="brand-light"> Clone</span></span>
         </button>
         <form className="search" onSubmit={search}>
@@ -455,8 +649,25 @@ export default function App() {
           {user ? (
             <>
               <span className="user-label">{user.display_name}</span>
-              <button className="outline-button" onClick={() => { setShowLibrary(true); setSelected(null); }}>Мои видео</button>
-              <button className="outline-button" onClick={() => { setUploadOpen(true); setError(""); }}>＋ Загрузить</button>
+              <button className="outline-button nav-button" onClick={() => { setPage("home"); setShowLibrary(true); setSelected(null); }}>Мои видео</button>
+              <button className="outline-button nav-button" onClick={() => void loadSubscriptionFeed()}>Подписки</button>
+              <button className="outline-button nav-button" onClick={() => void loadPersonalVideos("history")}>История</button>
+              <button className="outline-button nav-button" onClick={() => void loadPersonalVideos("favorites")}>Избранное</button>
+              <button className="outline-button nav-button" onClick={() => void loadPlaylists()}>Плейлисты</button>
+              <div className="notification-anchor">
+                <button className="icon-button notification-trigger" onClick={() => void toggleNotifications()} title="Уведомления">♢{unreadNotifications > 0 ? <span className="notification-count">{unreadNotifications}</span> : null}</button>
+                {showNotifications && (
+                  <div className="notification-popover">
+                    <div className="notification-heading"><strong>Уведомления</strong><button onClick={() => void markAllNotificationsRead()}>Прочитать все</button></div>
+                    {notifications.length ? notifications.map((item) => (
+                      <button className={item.read ? "notification-item" : "notification-item unread"} key={item.id} onClick={() => void openNotification(item)}>
+                        <span>{item.message}</span><small>{new Date(item.created_at).toLocaleString("ru-RU")}</small>
+                      </button>
+                    )) : <p className="notification-empty">Пока нет уведомлений</p>}
+                  </div>
+                )}
+              </div>
+              <button className="outline-button nav-button" onClick={() => { setUploadOpen(true); setError(""); }}>＋ Загрузить</button>
               <button className="icon-button" onClick={() => void logout()} title="Выйти">↗</button>
             </>
           ) : (
@@ -472,7 +683,7 @@ export default function App() {
             <button className="back-link" onClick={() => setSelected(null)}>← Назад</button>
             <video className="player" src={selected.playback_url} controls autoPlay playsInline />
             <h1>{selected.title}</h1>
-            <div className="video-meta">{selected.channel_name} · @{selected.channel_handle} · {new Date(selected.created_at).toLocaleDateString("ru-RU")}</div>
+            <div className="video-meta"><button className="channel-link" onClick={() => void loadChannel(selected.channel_handle)}>{selected.channel_name} · @{selected.channel_handle}</button> · {new Date(selected.created_at).toLocaleDateString("ru-RU")}</div>
             {selected.description && <p className="description">{selected.description}</p>}
             <div className="social-toolbar">
               <div className="reaction-group">
@@ -481,6 +692,8 @@ export default function App() {
               </div>
               <button className={engagement?.viewer_reposted ? "social-button active" : "social-button"} onClick={() => void toggleRepost()}>🔁 Репост · {engagement?.reposts ?? 0}</button>
               <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>
+              <button className={saved ? "social-button active" : "social-button"} onClick={() => void toggleFavorite()}>{saved ? "★ В избранном" : "☆ В избранное"}</button>
+              <button className="social-button" onClick={() => void addCurrentToPlaylist()}>＋ В плейлист</button>
               <span className="social-muted">◉ {engagement?.views ?? 0} просмотров</span>
             </div>
             {user && user.username !== selected.channel_handle && (
@@ -517,6 +730,82 @@ export default function App() {
               </div>
             </section>
           </section>
+        ) : page === "channel" && channelPage ? (
+          <>
+            <button className="back-link" onClick={() => { setPage("home"); setChannelPage(null); void loadVideos(); }}>← Все видео</button>
+            <section className="channel-hero">
+              <div className="channel-avatar channel-avatar-large">{channelPage.name.slice(0, 1).toUpperCase()}</div>
+              <div className="channel-hero-info">
+                <p className="eyebrow">КАНАЛ</p><h1>{channelPage.name}</h1>
+                <p>@{channelPage.handle} · {channelPage.subscribers} подписчиков · {channelPage.videos.total} видео</p>
+                {channelPage.description && <p>{channelPage.description}</p>}
+              </div>
+              {user && user.username !== channelPage.handle && (
+                <button className={channelPage.subscribed ? "outline-button subscribed" : "primary-button"} onClick={async () => {
+                  const method = channelPage.subscribed ? "DELETE" : "PUT";
+                  try {
+                    const result = await api<{ subscribed: boolean; subscribers: number }>(`/channels/${encodeURIComponent(channelPage.handle)}/subscription`, { method }, token ?? undefined);
+                    setChannelPage((current) => current ? { ...current, subscribed: result.subscribed, subscribers: result.subscribers } : current);
+                  } catch (err) { setError(err instanceof Error ? err.message : "Не удалось изменить подписку"); }
+                }}>{channelPage.subscribed ? "Вы подписаны" : "Подписаться"}</button>
+              )}
+            </section>
+            <div className="section-heading"><h2>Видео канала</h2><span className="result-count">{channelPage.videos.total} видео</span></div>
+            <div className="video-grid">
+              {videos.map((video) => (
+                <button className="video-card" key={video.id} onClick={() => setSelected(video)}>
+                  <div className="thumbnail">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}</div>
+                  <div className="video-card-info"><div className="channel-avatar">{video.channel_name.slice(0, 1).toUpperCase()}</div><div><h2>{video.title}</h2><p>{new Date(video.created_at).toLocaleDateString("ru-RU")}</p></div></div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : page === "playlists" ? (
+          <>
+            <div className="section-heading">
+              <div><p className="eyebrow">ТВОЯ КОЛЛЕКЦИЯ</p><h1>{selectedPlaylist ? selectedPlaylist.title : "Плейлисты"}</h1></div>
+              {selectedPlaylist ? <button className="outline-button" onClick={() => setSelectedPlaylist(null)}>← К плейлистам</button> : <button className="primary-button" onClick={() => void createPlaylist()}>＋ Создать плейлист</button>}
+            </div>
+            {selectedPlaylist ? (
+              <>
+                <p className="muted">{selectedPlaylist.description || "Без описания"} · {selectedPlaylist.visibility === "private" ? "Приватный" : selectedPlaylist.visibility === "public" ? "Публичный" : "Доступ по ссылке"}</p>
+                <div className="video-grid">
+                  {videos.map((video) => (
+                    <article className="video-card managed-video" key={video.id}>
+                      <button className="video-card-open" onClick={() => setSelected(video)}>
+                        <div className="thumbnail">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}</div>
+                        <div className="video-card-info"><div className="channel-avatar">{video.channel_name.slice(0, 1).toUpperCase()}</div><div><h2>{video.title}</h2><p>{video.channel_name}</p></div></div>
+                      </button>
+                      <div className="video-actions"><button className="small-button danger-button" onClick={async () => {
+                        if (!token || !selectedPlaylist) return;
+                        try {
+                          await api(`/playlists/${selectedPlaylist.id}/videos/${video.id}`, { method: "DELETE" }, token);
+                          await openPlaylist(selectedPlaylist);
+                        } catch (err) { setError(err instanceof Error ? err.message : "Не удалось удалить видео из плейлиста"); }
+                      }}>Убрать</button></div>
+                    </article>
+                  ))}
+                </div>
+                {!videos.length && <p className="comments-empty">В этом плейлисте пока нет видео.</p>}
+              </>
+            ) : (
+              <div className="playlist-grid">
+                {playlists.map((playlist) => (
+                  <article className="playlist-card" key={playlist.id}>
+                    <button className="playlist-open" onClick={() => void openPlaylist(playlist)}>
+                      <span className="playlist-icon">☷</span><strong>{playlist.title}</strong>
+                      <small>{playlist.video_count} видео · {playlist.visibility === "private" ? "Приватный" : playlist.visibility === "public" ? "Публичный" : "По ссылке"}</small>
+                    </button>
+                    <div className="playlist-actions">
+                      <button className="small-button" onClick={() => void updatePlaylistVisibility(playlist)}>{playlist.visibility === "public" ? "Сделать приватным" : "Сделать публичным"}</button>
+                      <button className="small-button danger-button" onClick={() => void deletePlaylist(playlist)}>Удалить</button>
+                    </div>
+                  </article>
+                ))}
+                {!playlists.length && <div className="empty-state"><h2>Плейлистов пока нет</h2><p>Создай первую подборку любимых видео.</p></div>}
+              </div>
+            )}
+          </>
         ) : showLibrary ? (
           <>
             <div className="section-heading">
@@ -550,9 +839,15 @@ export default function App() {
         ) : (
           <>
             <div className="section-heading">
-              <div><p className="eyebrow">СМОТРИ И ДЕЛИСЬ</p><h1>Видео для тебя</h1></div>
+              <div><p className="eyebrow">СМОТРИ И ДЕЛИСЬ</p><h1>{page === "subscriptions" ? "Новые видео подписок" : page === "history" ? "История просмотров" : page === "favorites" ? "Избранное" : "Видео для тебя"}</h1></div>
               <span className="result-count">{videos.length} видео</span>
             </div>
+            {page === "home" && <div className="video-filters">
+              <label>Сортировка<select value={sortOrder} onChange={(event) => { const value = event.target.value as typeof sortOrder; setSortOrder(value); void loadVideos(query, value, durationFilter, channelFilter); }}><option value="newest">Сначала новые</option><option value="popular">Популярные</option><option value="oldest">Сначала старые</option></select></label>
+              <label>Длительность<select value={durationFilter} onChange={(event) => { const value = event.target.value as typeof durationFilter; setDurationFilter(value); void loadVideos(query, sortOrder, value, channelFilter); }}><option value="">Любая</option><option value="short">До 4 минут</option><option value="long">От 4 минут</option></select></label>
+              <label>Канал<input value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)} placeholder="Имя канала" /><button className="small-button" onClick={() => void loadVideos(query, sortOrder, durationFilter, channelFilter.trim().replace(/^@/, ""))}>Применить</button></label>
+            </div>}
+            {page === "history" && <button className="small-button danger-button" onClick={async () => { if (!token || !window.confirm("Очистить историю просмотров?")) return; try { await api("/users/me/history", { method: "DELETE" }, token); setVideos([]); } catch (err) { setError(err instanceof Error ? err.message : "Не удалось очистить историю"); } }}>Очистить историю</button>}
             {videos.length ? (
               <div className="video-grid">
                 {videos.map((video) => (
@@ -621,7 +916,7 @@ export default function App() {
                 </select>
               </label>
               <label className="file-picker">Выбрать видеофайл
-                <input name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+                <input name="file" type="file" accept="video/mp4,video/webm,video/quicktime" required onChange={(event) => inspectVideoFile(event.target.files?.[0] ?? null)} />
                 {selectedFile && <span className="file-info">{selectedFile.name} · {formatSize(selectedFile.size)}</span>}
               </label>
               <label className="file-picker">Обложка (необязательно)

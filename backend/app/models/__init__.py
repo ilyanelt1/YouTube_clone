@@ -318,6 +318,108 @@ class VideoRepost(Base):
     )
 
 
+class VideoViewHistory(Base):
+    __tablename__ = "video_view_history"
+    __table_args__ = (sa.Index("ix_video_view_history_user_watched", "user_id", "watched_at"),)
+
+    user_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    video_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE"), primary_key=True
+    )
+    watched_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+    )
+
+
+class SavedVideo(Base):
+    __tablename__ = "saved_videos"
+
+    user_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    video_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class Playlist(Base):
+    __tablename__ = "playlists"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "visibility IN ('public', 'unlisted', 'private')", name="valid_visibility"
+        ),
+        sa.Index("ix_playlists_owner_created", "owner_id", "created_at"),
+    )
+
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    owner_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    title: orm.Mapped[str] = orm.mapped_column(sa.String(100), nullable=False)
+    description: orm.Mapped[str | None] = orm.mapped_column(sa.String(1000))
+    visibility: orm.Mapped[str] = orm.mapped_column(
+        sa.String(20), nullable=False, default="private"
+    )
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    updated_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+    )
+
+
+class PlaylistItem(Base):
+    __tablename__ = "playlist_items"
+    __table_args__ = (sa.UniqueConstraint("playlist_id", "position", name="uq_playlist_position"),)
+
+    playlist_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("playlists.id", ondelete="CASCADE"), primary_key=True
+    )
+    video_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE"), primary_key=True
+    )
+    position: orm.Mapped[int] = orm.mapped_column(sa.Integer, nullable=False, default=0)
+    added_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (sa.Index("ix_notifications_recipient_created", "recipient_id", "created_at"),)
+
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    recipient_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_id: orm.Mapped[UUID | None] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="SET NULL")
+    )
+    video_id: orm.Mapped[UUID | None] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE")
+    )
+    comment_id: orm.Mapped[UUID | None] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("comments.id", ondelete="CASCADE")
+    )
+    kind: orm.Mapped[str] = orm.mapped_column(sa.String(30), nullable=False)
+    message: orm.Mapped[str] = orm.mapped_column(sa.String(255), nullable=False)
+    read_at: orm.Mapped[datetime | None] = orm.mapped_column(sa.DateTime(timezone=True))
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
 __all__ = [
     "AuthSession",
     "ChannelSubscription",
@@ -330,6 +432,11 @@ __all__ = [
     "VideoReaction",
     "VideoRepost",
     "VideoShare",
+    "VideoViewHistory",
+    "SavedVideo",
+    "PlaylistItem",
+    "Playlist",
+    "Notification",
     "VideoAccessGrant",
     "user_roles",
 ]

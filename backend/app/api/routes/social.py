@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -13,11 +13,13 @@ from app.models import (
     Channel,
     ChannelSubscription,
     Comment,
+    Notification,
     User,
     Video,
     VideoReaction,
     VideoRepost,
     VideoShare,
+    VideoViewHistory,
 )
 
 router = APIRouter(tags=["social"])
@@ -78,6 +80,12 @@ def record_view(
 ) -> dict:
     accessible_video(video_id, db, user)
     db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
+    if user is not None:
+        history = db.get(VideoViewHistory, (user.id, video_id))
+        if history is None:
+            db.add(VideoViewHistory(user_id=user.id, video_id=video_id))
+        else:
+            history.watched_at = datetime.now(UTC)
     db.commit()
     return {"views": db.scalar(select(Video.view_count).where(Video.id == video_id)) or 0}
 
@@ -156,6 +164,7 @@ def set_reaction(
             VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
         )
     )
+    previous_reaction = reaction.reaction if reaction is not None else None
     if payload.reaction is None:
         if reaction is not None:
             db.delete(reaction)
@@ -163,6 +172,18 @@ def set_reaction(
         db.add(VideoReaction(video_id=video_id, user_id=user.id, reaction=payload.reaction))
     else:
         reaction.reaction = payload.reaction
+    if payload.reaction == "like" and previous_reaction != "like":
+        video = accessible_video(video_id, db, user)
+        if video.channel.owner_id != user.id:
+            db.add(
+                Notification(
+                    recipient_id=video.channel.owner_id,
+                    actor_id=user.id,
+                    video_id=video_id,
+                    kind="video_like",
+                    message=f"@{user.username} оценил(а) ваше видео",
+                )
+            )
     db.commit()
     return get_engagement(video_id, db, user)
 
@@ -199,6 +220,34 @@ def add_comment(
             raise HTTPException(status_code=422, detail="Invalid parent comment")
     comment = Comment(video_id=video_id, user_id=user.id, parent_id=payload.parent_id, body=body)
     db.add(comment)
+    db.flush()
+    if payload.parent_id is not None:
+        parent = db.get(Comment, payload.parent_id)
+        if parent is not None and parent.user_id != user.id:
+            db.add(
+                Notification(
+                    recipient_id=parent.user_id,
+                    actor_id=user.id,
+                    video_id=video_id,
+                    comment_id=comment.id,
+                    kind="comment_reply",
+                    message=f"@{user.username} ответил(а) на ваш комментарий",
+                )
+            )
+    else:
+        video = accessible_video(video_id, db, user)
+        owner_id = video.channel.owner_id
+        if owner_id != user.id:
+            db.add(
+                Notification(
+                    recipient_id=owner_id,
+                    actor_id=user.id,
+                    video_id=video_id,
+                    comment_id=comment.id,
+                    kind="new_comment",
+                    message=f"@{user.username} оставил(а) комментарий к вашему видео",
+                )
+            )
     db.commit()
     db.refresh(comment)
     return serialize_comment(comment)
@@ -303,6 +352,14 @@ def subscribe(
     subscription = db.get(ChannelSubscription, (user.id, channel.id))
     if subscription is None:
         db.add(ChannelSubscription(subscriber_id=user.id, channel_id=channel.id))
+        db.add(
+            Notification(
+                recipient_id=channel.owner_id,
+                actor_id=user.id,
+                kind="new_subscriber",
+                message=f"@{user.username} подписался(ась) на ваш канал",
+            )
+        )
         db.commit()
     return _subscription_status(handle, db, user)
 
