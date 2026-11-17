@@ -225,7 +225,6 @@ class AuthSession(Base):
     user: orm.Mapped[User] = orm.relationship(back_populates="auth_sessions")
 
 
-
 class VideoReaction(Base):
     __tablename__ = "video_reactions"
     __table_args__ = (
