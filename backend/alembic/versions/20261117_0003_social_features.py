@@ -85,5 +85,5 @@ def downgrade() -> None:
     op.drop_table("comments")
     op.drop_index("ix_video_reactions_user_id", table_name="video_reactions")
     op.drop_table("video_reactions")
-    op.drop_constraint("ck_videos_nonnegative_view_count", "videos", type_="check")
+    op.drop_constraint(op.f("ck_videos_nonnegative_view_count"), "videos", type_="check")
     op.drop_column("videos", "view_count")
