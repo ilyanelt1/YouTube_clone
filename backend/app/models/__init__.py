@@ -304,6 +304,21 @@ class ChannelSubscription(Base):
     )
 
 
+
+class VideoRepost(Base):
+    __tablename__ = "video_reposts"
+
+    video_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
 __all__ = [
     "AuthSession",
     "ChannelSubscription",
@@ -314,6 +329,7 @@ __all__ = [
     "User",
     "Video",
     "VideoReaction",
+    "VideoRepost",
     "VideoShare",
     "VideoAccessGrant",
     "user_roles",
