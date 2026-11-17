@@ -15,6 +15,8 @@ A YouTube-inspired video hosting MVP built with FastAPI, PostgreSQL, S3-compatib
 - Public feed, title search, creator's video library, metadata editing and video deletion.
 - Browser upload progress indicator.
 - HTTP byte-range streaming for playback and seeking.
+- Video likes/dislikes, threaded comments, comment moderation by authors and channel owners.
+- Share links with unique per-user share counts, playback view counters and channel subscriptions.
 - Docker Compose services for PostgreSQL 17, Redis, S3-compatible storage, backend and frontend.
 
 ## Stack
@@ -61,6 +63,17 @@ Python 3.14, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 17, boto3, S3-compatible
 - `PATCH /api/v1/videos/{id}` — owner-only update of title, description and visibility.
 - `DELETE /api/v1/videos/{id}` — owner-only deletion of the database record and stored media objects.
 
+### Social interactions
+- `GET /api/v1/videos/{id}/engagement` — likes, dislikes, comments, shares, views and the current user reaction.
+- `PUT /api/v1/videos/{id}/reaction` — set `like`, `dislike` or `null` to remove a reaction.
+- `GET /api/v1/videos/{id}/comments` — list comments and replies.
+- `POST /api/v1/videos/{id}/comments` — add a comment; optional `parent_id` creates a reply.
+- `PATCH /api/v1/comments/{id}` / `DELETE /api/v1/comments/{id}` — edit or delete your own comment; video owners can moderate comments under their videos.
+- `POST /api/v1/videos/{id}/share` — create a unique share record and return a deep link.
+- `POST /api/v1/videos/{id}/view` — increment the playback view counter.
+- `GET /api/v1/channels/{handle}/subscription` — subscription state and subscriber count.
+- `PUT` / `DELETE /api/v1/channels/{handle}/subscription` — subscribe or unsubscribe.
+
 ## Upload limits and formats
 
 - Video: MP4, WebM, MOV; maximum 500 MB.
@@ -80,4 +93,4 @@ docker compose down
 
 ## Current MVP limitations
 
-Video transcoding, automatic cover generation, resumable/chunked uploads, upload cancellation, likes, comments, subscriptions, playlists, moderation UI and background processing are not implemented yet. Covers can be uploaded manually. Do not expose the storage console or database publicly. For an Internet-facing deployment, put HTTPS in front of the frontend and configure firewall rules and backups.
+Video transcoding, automatic cover generation, resumable/chunked uploads, upload cancellation, playlists, notifications and background processing are not implemented yet. Covers can be uploaded manually. Social features are an MVP: view counts are incremented when the watch page opens, and share counts track unique signed-in users rather than external share destinations. Do not expose the storage console or database publicly. For an Internet-facing deployment, put HTTPS in front of the frontend and configure firewall rules and backups.
