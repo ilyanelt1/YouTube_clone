@@ -108,22 +108,28 @@ def get_channel(
         )
         .order_by(Video.published_at.desc(), Video.created_at.desc())
     )
-    total = db.scalar(
-        select(func.count()).select_from(Video).where(
-            Video.channel_id == channel.id,
-            Video.status == "ready",
-            Video.visibility == "public",
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(Video)
+            .where(
+                Video.channel_id == channel.id,
+                Video.status == "ready",
+                Video.visibility == "public",
+            )
         )
-    ) or 0
-    videos = db.scalars(videos_query.offset(offset).limit(limit)).unique().all()
-    subscribers = db.scalar(
-        select(func.count()).select_from(ChannelSubscription).where(
-            ChannelSubscription.channel_id == channel.id
-        )
-    ) or 0
-    subscribed = (
-        user is not None and db.get(ChannelSubscription, (user.id, channel.id)) is not None
+        or 0
     )
+    videos = db.scalars(videos_query.offset(offset).limit(limit)).unique().all()
+    subscribers = (
+        db.scalar(
+            select(func.count())
+            .select_from(ChannelSubscription)
+            .where(ChannelSubscription.channel_id == channel.id)
+        )
+        or 0
+    )
+    subscribed = user is not None and db.get(ChannelSubscription, (user.id, channel.id)) is not None
     return {
         "id": channel.id,
         "handle": channel.handle,
@@ -263,9 +269,7 @@ def list_my_playlists(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict]:
     playlists = db.scalars(
-        select(Playlist)
-        .where(Playlist.owner_id == user.id)
-        .order_by(Playlist.created_at.desc())
+        select(Playlist).where(Playlist.owner_id == user.id).order_by(Playlist.created_at.desc())
     ).all()
     return [_playlist_summary(playlist, db) for playlist in playlists]
 
