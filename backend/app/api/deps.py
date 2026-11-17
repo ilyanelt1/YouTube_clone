@@ -71,7 +71,6 @@ def get_current_user(
     return user
 
 
-
 def require_roles(*allowed_roles: str):
     """Создаёт зависимость с проверкой ролей пользователя."""
 
