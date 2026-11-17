@@ -109,17 +109,13 @@ def test_channels_feed_history_favorites_playlists_and_notifications(monkeypatch
         assert viewer_notifications.json()["unread_count"] == 1
         assert viewer_notifications.json()["items"][0]["kind"] == "new_video"
 
-        view = client.post(
-            f"/api/v1/videos/{first_video['id']}/view", headers=viewer
-        )
+        view = client.post(f"/api/v1/videos/{first_video['id']}/view", headers=viewer)
         assert view.status_code == 200
         history = client.get("/api/v1/users/me/history", headers=viewer)
         assert history.json()["total"] == 1
         assert history.json()["items"][0]["id"] == first_video["id"]
 
-        saved = client.put(
-            f"/api/v1/videos/{first_video['id']}/favorite", headers=viewer
-        )
+        saved = client.put(f"/api/v1/videos/{first_video['id']}/favorite", headers=viewer)
         assert saved.json()["saved"] is True
         favorites = client.get("/api/v1/users/me/favorites", headers=viewer)
         assert favorites.json()["total"] == 1
