@@ -92,6 +92,9 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
 
         assert client.get(f"/api/v1/videos/{video_id}").status_code == 404
         assert client.get(f"/api/v1/videos/{video_id}", headers=viewer).status_code == 404
+        assert client.get(f"/api/v1/videos/{video_id}/comments", headers=viewer).status_code == 404
+        assert client.get(f"/api/v1/videos/{video_id}/engagement", headers=viewer).status_code == 404
+        assert client.post(f"/api/v1/videos/{video_id}/view", headers=viewer).status_code == 404
         assert client.get(f"/api/v1/videos/{video_id}", headers=owner).status_code == 200
 
         granted = client.put(
@@ -101,6 +104,9 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         )
         assert granted.status_code == 200
         assert client.get(f"/api/v1/videos/{video_id}", headers=viewer).status_code == 200
+        assert client.get(f"/api/v1/videos/{video_id}/comments", headers=viewer).status_code == 200
+        assert client.get(f"/api/v1/videos/{video_id}/engagement", headers=viewer).status_code == 200
+        assert client.post(f"/api/v1/videos/{video_id}/view", headers=viewer).status_code == 200
         assert (
             client.get(f"/api/v1/videos/{video_id}/access-grants", headers=viewer).status_code
             == 404
