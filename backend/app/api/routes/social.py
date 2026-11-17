@@ -16,6 +16,7 @@ from app.models import (
     Notification,
     User,
     Video,
+    VideoAccessGrant,
     VideoReaction,
     VideoRepost,
     VideoShare,
@@ -52,10 +53,15 @@ class CommentList(BaseModel):
 
 def accessible_video(video_id: UUID, db: Session, user: User | None) -> Video:
     video = db.scalar(select(Video).where(Video.id == video_id, Video.status == "ready"))
-    if video is None or (
-        video.visibility == "private" and (user is None or video.channel.owner_id != user.id)
-    ):
+    if video is None:
         raise HTTPException(status_code=404, detail="Video not found")
+    if video.visibility == "private":
+        has_access = user is not None and (
+            video.channel.owner_id == user.id
+            or db.get(VideoAccessGrant, (video.id, user.id)) is not None
+        )
+        if not has_access:
+            raise HTTPException(status_code=404, detail="Video not found")
     return video
 
 
