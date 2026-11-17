@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
@@ -59,6 +59,22 @@ def serialize_comment(comment: Comment) -> CommentRead:
         created_at=comment.created_at,
         updated_at=comment.updated_at,
     )
+
+
+@router.post("/videos/{video_id}/view")
+def record_view(
+    video_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_current_user)],
+) -> dict:
+    accessible_video(video_id, db, user)
+    db.execute(
+        update(Video)
+        .where(Video.id == video_id)
+        .values(view_count=Video.view_count + 1)
+    )
+    db.commit()
+    return {"views": db.scalar(select(Video.view_count).where(Video.id == video_id)) or 0}
 
 
 @router.get("/videos/{video_id}/engagement")
