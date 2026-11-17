@@ -70,9 +70,14 @@ def _playlist_access(playlist_id: UUID, db: Session, user: User | None) -> Playl
 
 
 def _playlist_summary(playlist: Playlist, db: Session) -> dict:
-    count = db.scalar(
-        select(func.count()).select_from(PlaylistItem).where(PlaylistItem.playlist_id == playlist.id)
-    ) or 0
+    count = (
+        db.scalar(
+            select(func.count())
+            .select_from(PlaylistItem)
+            .where(PlaylistItem.playlist_id == playlist.id)
+        )
+        or 0
+    )
     return {
         "id": playlist.id,
         "title": playlist.title,
@@ -116,7 +121,9 @@ def get_channel(
             ChannelSubscription.channel_id == channel.id
         )
     ) or 0
-    subscribed = user is not None and db.get(ChannelSubscription, (user.id, channel.id)) is not None
+    subscribed = (
+        user is not None and db.get(ChannelSubscription, (user.id, channel.id)) is not None
+    )
     return {
         "id": channel.id,
         "handle": channel.handle,
@@ -154,7 +161,8 @@ def subscription_feed(
         .join(ChannelSubscription, ChannelSubscription.channel_id == Channel.id)
         .where(*filters)
     )
-    return _video_list(db.scalars(statement.offset(offset).limit(limit)).unique().all(), db.scalar(count) or 0)
+    videos = db.scalars(statement.offset(offset).limit(limit)).unique().all()
+    return _video_list(videos, db.scalar(count) or 0)
 
 
 @router.get("/users/me/history", response_model=VideoList)
@@ -170,9 +178,14 @@ def get_watch_history(
         .where(VideoViewHistory.user_id == user.id, Video.status == "ready")
         .order_by(VideoViewHistory.watched_at.desc())
     )
-    total = db.scalar(
-        select(func.count()).select_from(VideoViewHistory).where(VideoViewHistory.user_id == user.id)
-    ) or 0
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(VideoViewHistory)
+            .where(VideoViewHistory.user_id == user.id)
+        )
+        or 0
+    )
     return _video_list(db.scalars(statement.offset(offset).limit(limit)).unique().all(), total)
 
 
@@ -199,7 +212,12 @@ def get_favorites(
         .where(SavedVideo.user_id == user.id, Video.status == "ready")
         .order_by(SavedVideo.created_at.desc())
     )
-    total = db.scalar(select(func.count()).select_from(SavedVideo).where(SavedVideo.user_id == user.id)) or 0
+    total = (
+        db.scalar(
+            select(func.count()).select_from(SavedVideo).where(SavedVideo.user_id == user.id)
+        )
+        or 0
+    )
     return _video_list(db.scalars(statement.offset(offset).limit(limit)).unique().all(), total)
 
 
@@ -237,7 +255,9 @@ def list_my_playlists(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict]:
     playlists = db.scalars(
-        select(Playlist).where(Playlist.owner_id == user.id).order_by(Playlist.created_at.desc())
+        select(Playlist)
+        .where(Playlist.owner_id == user.id)
+        .order_by(Playlist.created_at.desc())
     ).all()
     return [_playlist_summary(playlist, db) for playlist in playlists]
 
@@ -293,7 +313,9 @@ def update_playlist(
     if "title" in changes:
         playlist.title = changes["title"].strip()
     if "description" in changes:
-        playlist.description = changes["description"].strip() if changes["description"] else None
+        playlist.description = (
+            changes["description"].strip() if changes["description"] else None
+        )
     if "visibility" in changes:
         playlist.visibility = changes["visibility"]
     db.commit()
@@ -328,7 +350,9 @@ def add_playlist_video(
     if video is None or video.status != "ready" or video.visibility == "private":
         raise HTTPException(status_code=404, detail="Video not found")
     if playlist.visibility != "private" and video.visibility != "public":
-        raise HTTPException(status_code=400, detail="Only public videos can be added to a public playlist")
+        raise HTTPException(
+            status_code=400, detail="Only public videos can be added to a public playlist"
+        )
     if db.get(PlaylistItem, (playlist_id, video_id)) is None:
         position = db.scalar(
             select(func.coalesce(func.max(PlaylistItem.position), -1) + 1).where(
