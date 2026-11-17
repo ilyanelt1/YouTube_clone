@@ -206,15 +206,23 @@ def get_favorites(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VideoList:
+    filters = (
+        SavedVideo.user_id == user.id,
+        Video.status == "ready",
+        Video.visibility != "private",
+    )
     statement = (
         select(Video)
         .join(SavedVideo, SavedVideo.video_id == Video.id)
-        .where(SavedVideo.user_id == user.id, Video.status == "ready")
+        .where(*filters)
         .order_by(SavedVideo.created_at.desc())
     )
     total = (
         db.scalar(
-            select(func.count()).select_from(SavedVideo).where(SavedVideo.user_id == user.id)
+            select(func.count())
+            .select_from(SavedVideo)
+            .join(Video, SavedVideo.video_id == Video.id)
+            .where(*filters)
         )
         or 0
     )
@@ -268,9 +276,12 @@ def create_playlist(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Playlist title cannot be empty")
     playlist = Playlist(
         owner_id=user.id,
-        title=payload.title.strip(),
+        title=title,
         description=payload.description.strip() if payload.description else None,
         visibility=payload.visibility,
     )
@@ -311,7 +322,10 @@ def update_playlist(
         raise HTTPException(status_code=404, detail="Playlist not found")
     changes = payload.model_dump(exclude_unset=True)
     if "title" in changes:
-        playlist.title = changes["title"].strip()
+        title = changes["title"].strip()
+        if not title:
+            raise HTTPException(status_code=422, detail="Playlist title cannot be empty")
+        playlist.title = title
     if "description" in changes:
         playlist.description = (
             changes["description"].strip() if changes["description"] else None
