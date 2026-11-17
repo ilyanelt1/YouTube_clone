@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from io import BytesIO
+from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -132,7 +133,7 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         assert client.get("/api/v1/moderation/reports").status_code == 401
 
         with factory() as db:
-            moderator_user = db.get(User, moderator_id)
+            moderator_user = db.get(User, UUID(moderator_id))
             admin_role = db.scalar(sa.select(Role).where(Role.name == "admin"))
             assert moderator_user is not None and admin_role is not None
             moderator_user.roles.append(db.scalar(sa.select(Role).where(Role.name == "moderator")))
@@ -161,7 +162,7 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         assert client.get(f"/api/v1/videos/{public_video['id']}").status_code == 200
 
         with factory() as db:
-            owner_user = db.get(User, owner_id)
+            owner_user = db.get(User, UUID(owner_id))
             admin_role = db.scalar(sa.select(Role).where(Role.name == "admin"))
             assert owner_user is not None and admin_role is not None
             owner_user.roles.append(admin_role)
