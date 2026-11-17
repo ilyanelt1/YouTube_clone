@@ -107,6 +107,7 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         assert client.get(f"/api/v1/videos/{video_id}/comments", headers=viewer).status_code == 200
         assert client.get(f"/api/v1/videos/{video_id}/engagement", headers=viewer).status_code == 200
         assert client.post(f"/api/v1/videos/{video_id}/view", headers=viewer).status_code == 200
+        assert client.get("/api/v1/users/me/history", headers=viewer).json()["total"] == 1
         assert (
             client.get(f"/api/v1/videos/{video_id}/access-grants", headers=viewer).status_code
             == 404
@@ -118,6 +119,7 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         )
         assert revoked.status_code == 204
         assert client.get(f"/api/v1/videos/{video_id}", headers=viewer).status_code == 404
+        assert client.get("/api/v1/users/me/history", headers=viewer).json()["total"] == 0
 
         public_video = upload_video(client, owner_token, "public", monkeypatch)
         report = client.post(
