@@ -9,7 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
-from app.models import Channel, ChannelSubscription, Comment, User, Video, VideoReaction, VideoShare
+from app.models import (
+    Channel,
+    ChannelSubscription,
+    Comment,
+    User,
+    Video,
+    VideoReaction,
+    VideoRepost,
+    VideoShare,
+)
 
 router = APIRouter(tags=["social"])
 
@@ -106,6 +115,15 @@ def get_engagement(
         )
         or 0
     )
+    reposts = (
+        db.scalar(
+            select(func.count()).select_from(VideoRepost).where(VideoRepost.video_id == video_id)
+        )
+        or 0
+    )
+    viewer_reposted = False
+    if user is not None:
+        viewer_reposted = db.get(VideoRepost, (video_id, user.id)) is not None
     viewer_reaction = None
     if user is not None:
         viewer_reaction = db.scalar(
@@ -118,6 +136,8 @@ def get_engagement(
         "dislikes": dislikes,
         "comments": comments,
         "shares": shares,
+        "reposts": reposts,
+        "viewer_reposted": viewer_reposted,
         "views": accessible_video(video_id, db, user).view_count,
         "viewer_reaction": viewer_reaction,
     }
@@ -240,6 +260,33 @@ def share_video(
         or 0
     )
     return {"shares": shares, "share_url": f"{str(request.base_url).rstrip('/')}/?video={video_id}"}
+
+
+@router.put("/videos/{video_id}/repost")
+def repost_video(
+    video_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    accessible_video(video_id, db, user)
+    if db.get(VideoRepost, (video_id, user.id)) is None:
+        db.add(VideoRepost(video_id=video_id, user_id=user.id))
+        db.commit()
+    return get_engagement(video_id, db, user)
+
+
+@router.delete("/videos/{video_id}/repost")
+def undo_repost(
+    video_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    accessible_video(video_id, db, user)
+    repost = db.get(VideoRepost, (video_id, user.id))
+    if repost is not None:
+        db.delete(repost)
+        db.commit()
+    return get_engagement(video_id, db, user)
 
 
 @router.put("/channels/{handle}/subscription")
