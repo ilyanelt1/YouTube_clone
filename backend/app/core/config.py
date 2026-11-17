@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=15, gt=0, le=60)
     refresh_token_expire_days: int = Field(default=30, gt=0, le=365)
     refresh_cookie_name: str = "youtube_refresh"
+    s3_endpoint_url: str = "http://minio:9000"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: SecretStr = SecretStr("change-this-minio-password")
 
     @model_validator(mode="after")
     def validate_secret_key(self) -> Settings:
