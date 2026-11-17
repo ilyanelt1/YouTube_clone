@@ -68,11 +68,7 @@ def record_view(
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
     accessible_video(video_id, db, user)
-    db.execute(
-        update(Video)
-        .where(Video.id == video_id)
-        .values(view_count=Video.view_count + 1)
-    )
+    db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
     db.commit()
     return {"views": db.scalar(select(Video.view_count).where(Video.id == video_id)) or 0}
 
@@ -84,23 +80,39 @@ def get_engagement(
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
     accessible_video(video_id, db, user)
-    likes = db.scalar(select(func.count()).select_from(VideoReaction).where(
-        VideoReaction.video_id == video_id, VideoReaction.reaction == "like"
-    )) or 0
-    dislikes = db.scalar(select(func.count()).select_from(VideoReaction).where(
-        VideoReaction.video_id == video_id, VideoReaction.reaction == "dislike"
-    )) or 0
-    comments = db.scalar(select(func.count()).select_from(Comment).where(
-        Comment.video_id == video_id
-    )) or 0
-    shares = db.scalar(select(func.count()).select_from(VideoShare).where(
-        VideoShare.video_id == video_id
-    )) or 0
+    likes = (
+        db.scalar(
+            select(func.count())
+            .select_from(VideoReaction)
+            .where(VideoReaction.video_id == video_id, VideoReaction.reaction == "like")
+        )
+        or 0
+    )
+    dislikes = (
+        db.scalar(
+            select(func.count())
+            .select_from(VideoReaction)
+            .where(VideoReaction.video_id == video_id, VideoReaction.reaction == "dislike")
+        )
+        or 0
+    )
+    comments = (
+        db.scalar(select(func.count()).select_from(Comment).where(Comment.video_id == video_id))
+        or 0
+    )
+    shares = (
+        db.scalar(
+            select(func.count()).select_from(VideoShare).where(VideoShare.video_id == video_id)
+        )
+        or 0
+    )
     viewer_reaction = None
     if user is not None:
-        viewer_reaction = db.scalar(select(VideoReaction.reaction).where(
-            VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
-        ))
+        viewer_reaction = db.scalar(
+            select(VideoReaction.reaction).where(
+                VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
+            )
+        )
     return {
         "likes": likes,
         "dislikes": dislikes,
@@ -119,9 +131,11 @@ def set_reaction(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
     accessible_video(video_id, db, user)
-    reaction = db.scalar(select(VideoReaction).where(
-        VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
-    ))
+    reaction = db.scalar(
+        select(VideoReaction).where(
+            VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
+        )
+    )
     if payload.reaction is None:
         if reaction is not None:
             db.delete(reaction)
@@ -163,9 +177,7 @@ def add_comment(
         parent = db.get(Comment, payload.parent_id)
         if parent is None or parent.video_id != video_id or parent.parent_id is not None:
             raise HTTPException(status_code=422, detail="Invalid parent comment")
-    comment = Comment(
-        video_id=video_id, user_id=user.id, parent_id=payload.parent_id, body=body
-    )
+    comment = Comment(video_id=video_id, user_id=user.id, parent_id=payload.parent_id, body=body)
     db.add(comment)
     db.commit()
     db.refresh(comment)
@@ -201,9 +213,7 @@ def remove_comment(
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
     video = db.get(Video, comment.video_id)
-    if comment.user_id != user.id and (
-        video is None or video.channel.owner_id != user.id
-    ):
+    if comment.user_id != user.id and (video is None or video.channel.owner_id != user.id):
         raise HTTPException(status_code=404, detail="Comment not found")
     if comment.parent_id is None:
         db.execute(delete(Comment).where(Comment.parent_id == comment.id))
@@ -223,9 +233,12 @@ def share_video(
     if existing is None:
         db.add(VideoShare(video_id=video_id, user_id=user.id))
         db.commit()
-    shares = db.scalar(select(func.count()).select_from(VideoShare).where(
-        VideoShare.video_id == video_id
-    )) or 0
+    shares = (
+        db.scalar(
+            select(func.count()).select_from(VideoShare).where(VideoShare.video_id == video_id)
+        )
+        or 0
+    )
     return {"shares": shares, "share_url": f"{str(request.base_url).rstrip('/')}/?video={video_id}"}
 
 
@@ -276,9 +289,14 @@ def _subscription_status(handle: str, db: Session, user: User | None) -> dict:
     channel = db.scalar(select(Channel).where(Channel.handle == handle))
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
-    subscribers = db.scalar(select(func.count()).select_from(ChannelSubscription).where(
-        ChannelSubscription.channel_id == channel.id
-    )) or 0
+    subscribers = (
+        db.scalar(
+            select(func.count())
+            .select_from(ChannelSubscription)
+            .where(ChannelSubscription.channel_id == channel.id)
+        )
+        or 0
+    )
     subscribed = False
     if user is not None:
         subscribed = db.get(ChannelSubscription, (user.id, channel.id)) is not None
