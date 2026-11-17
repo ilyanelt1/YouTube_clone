@@ -793,7 +793,7 @@ export default function App() {
               <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>
               <button className={saved ? "social-button active" : "social-button"} onClick={() => void toggleFavorite()}>{saved ? "★ В избранном" : "☆ В избранное"}</button>
               <button className="social-button" onClick={() => void addCurrentToPlaylist()}>＋ В плейлист</button>
-              {user && user.username !== selected.channel_handle && <button className="social-button" onClick={() => void reportSelectedVideo()}>⚑ Пожаловаться</button>}
+              {user && user.username !== selected.channel_handle && selected.visibility !== "private" && <button className="social-button" onClick={() => void reportSelectedVideo()}>⚑ Пожаловаться</button>}
               <span className="social-muted">◉ {engagement?.views ?? 0} просмотров</span>
             </div>
             {user && user.username !== selected.channel_handle && (
@@ -1036,7 +1036,7 @@ export default function App() {
                 <select name="visibility" defaultValue="public">
                   <option value="public">Открытый доступ — в общем каталоге</option>
                   <option value="unlisted">Доступ по ссылке — скрыто из каталога</option>
-                  <option value="private">Приватное — только владелец</option>
+                  <option value="private">Приватное — владелец и пользователи с разрешением</option>
                 </select>
               </label>
               <label className="file-picker">Выбрать видеофайл
