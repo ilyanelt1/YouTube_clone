@@ -121,11 +121,12 @@ export default function App() {
     if (!token) return;
     setBusy(true);
     setError("");
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     try {
       await api<Video>("/videos/upload", { method: "POST", body: form }, token);
       setUploadOpen(false);
-      event.currentTarget.reset();
+      formElement.reset();
       await loadVideos(query);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
