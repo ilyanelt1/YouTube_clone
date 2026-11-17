@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -85,7 +85,7 @@ def record_view(
         if history is None:
             db.add(VideoViewHistory(user_id=user.id, video_id=video_id))
         else:
-            history.watched_at = datetime.now().astimezone()
+            history.watched_at = datetime.now(UTC)
     db.commit()
     return {"views": db.scalar(select(Video.view_count).where(Video.id == video_id)) or 0}
 
@@ -164,6 +164,7 @@ def set_reaction(
             VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
         )
     )
+    previous_reaction = reaction.reaction if reaction is not None else None
     if payload.reaction is None:
         if reaction is not None:
             db.delete(reaction)
@@ -171,6 +172,18 @@ def set_reaction(
         db.add(VideoReaction(video_id=video_id, user_id=user.id, reaction=payload.reaction))
     else:
         reaction.reaction = payload.reaction
+    if payload.reaction == "like" and previous_reaction != "like":
+        video = accessible_video(video_id, db, user)
+        if video.channel.owner_id != user.id:
+            db.add(
+                Notification(
+                    recipient_id=video.channel.owner_id,
+                    actor_id=user.id,
+                    video_id=video_id,
+                    kind="video_like",
+                    message=f"@{user.username} оценил(а) ваше видео",
+                )
+            )
     db.commit()
     return get_engagement(video_id, db, user)
 
