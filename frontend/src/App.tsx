@@ -577,7 +577,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => { setSelected(null); setShowLibrary(false); void loadVideos(); }}>
+        <button className="brand" onClick={() => { setSelected(null); setShowLibrary(false); setPage("home"); setChannelPage(null); setSelectedPlaylist(null); void loadVideos(); }}>
           <span className="brand-mark">▶</span><span>YouTube<span className="brand-light"> Clone</span></span>
         </button>
         <form className="search" onSubmit={search}>
@@ -630,7 +630,9 @@ export default function App() {
                 <button className={engagement?.viewer_reaction === "dislike" ? "social-button active" : "social-button"} onClick={() => void setVideoReaction("dislike")} aria-label="Не нравится">👎 {engagement?.dislikes ?? 0}</button>
               </div>
               <button className={engagement?.viewer_reposted ? "social-button active" : "social-button"} onClick={() => void toggleRepost()}>🔁 Репост · {engagement?.reposts ?? 0}</button>
-              <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>\n              <button className={saved ? "social-button active" : "social-button"} onClick={() => void toggleFavorite()}>{saved ? "★ В избранном" : "☆ В избранное"}</button>\n              <button className="social-button" onClick={() => void addCurrentToPlaylist()}>＋ В плейлист</button>
+              <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>
+              <button className={saved ? "social-button active" : "social-button"} onClick={() => void toggleFavorite()}>{saved ? "★ В избранном" : "☆ В избранное"}</button>
+              <button className="social-button" onClick={() => void addCurrentToPlaylist()}>＋ В плейлист</button>
               <span className="social-muted">◉ {engagement?.views ?? 0} просмотров</span>
             </div>
             {user && user.username !== selected.channel_handle && (
