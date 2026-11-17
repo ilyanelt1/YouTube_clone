@@ -205,6 +205,15 @@ export default function App() {
   }, [selected?.id, token]);
 
   useEffect(() => {
+    if (!token) { setUnreadNotifications(0); return; }
+    let active = true;
+    api<{ unread_count: number }>("/notifications", {}, token)
+      .then((result) => { if (active) setUnreadNotifications(result.unread_count); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [token]);
+
+  useEffect(() => {
     const videoId = new URLSearchParams(window.location.search).get("video");
     if (!videoId) return;
     api<Video>(`/videos/${videoId}`)
@@ -614,7 +623,7 @@ export default function App() {
     setSelected(null);
     setShowLibrary(false);
     setPage("home");
-    void loadVideos(query, sortOrder, durationFilter, channelFilter);
+    void loadVideos(query, sortOrder, durationFilter, channelFilter.trim().replace(/^@/, ""));
   }
 
   function closeUpload() {
