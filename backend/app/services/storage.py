@@ -44,6 +44,21 @@ def upload_video(file_obj, object_key: str, content_type: str) -> None:
     )
 
 
+def upload_thumbnail(file_obj, object_key: str, content_type: str) -> None:
+    ensure_video_bucket()
+    get_s3_client().upload_fileobj(
+        file_obj,
+        VIDEO_BUCKET,
+        object_key,
+        ExtraArgs={"ContentType": content_type, "CacheControl": "public, max-age=86400"},
+    )
+
+
+def delete_object(object_key: str) -> None:
+    ensure_video_bucket()
+    get_s3_client().delete_object(Bucket=VIDEO_BUCKET, Key=object_key)
+
+
 def get_video_object(object_key: str, byte_range: str | None = None) -> dict:
     ensure_video_bucket()
     client = get_s3_client()
