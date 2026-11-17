@@ -400,9 +400,9 @@ def grant_video_access(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    video = db.scalar(select(Video).join(Channel).where(
-        Video.id == video_id, Channel.owner_id == current_user.id
-    ))
+    video = db.scalar(
+        select(Video).join(Channel).where(Video.id == video_id, Channel.owner_id == current_user.id)
+    )
     if video is None or video.visibility != "private":
         raise HTTPException(status_code=404, detail="Приватное видео не найдено")
     target = db.scalar(
