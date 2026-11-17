@@ -304,7 +304,6 @@ class ChannelSubscription(Base):
     )
 
 
-
 class VideoRepost(Base):
     __tablename__ = "video_reposts"
 
