@@ -3,7 +3,17 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -74,7 +84,7 @@ def upload_video_endpoint(
     db: Annotated[Session, Depends(get_db)],
     title: Annotated[str, Form(min_length=1, max_length=120)],
     description: Annotated[str | None, Form(max_length=5000)] = None,
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
 ) -> VideoRead:
     clean_title = title.strip()
     if not clean_title:
