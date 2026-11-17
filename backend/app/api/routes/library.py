@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
@@ -18,6 +18,7 @@ from app.models import (
     SavedVideo,
     User,
     Video,
+    VideoAccessGrant,
     VideoViewHistory,
 )
 from app.schemas.video import VideoList, VideoRead
@@ -178,17 +179,28 @@ def get_watch_history(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VideoList:
+    access_filter = or_(
+        Video.visibility != "private",
+        Video.id.in_(
+            select(VideoAccessGrant.video_id).where(VideoAccessGrant.user_id == user.id)
+        ),
+    )
+    history_filters = (
+        VideoViewHistory.user_id == user.id,
+        Video.status == "ready",
+        access_filter,
+    )
     statement = (
         select(Video)
         .join(VideoViewHistory, VideoViewHistory.video_id == Video.id)
-        .where(VideoViewHistory.user_id == user.id, Video.status == "ready")
+        .where(*history_filters)
         .order_by(VideoViewHistory.watched_at.desc())
     )
     total = (
         db.scalar(
-            select(func.count())
-            .select_from(VideoViewHistory)
-            .where(VideoViewHistory.user_id == user.id)
+            select(func.count(Video.id))
+            .join(VideoViewHistory, VideoViewHistory.video_id == Video.id)
+            .where(*history_filters)
         )
         or 0
     )
@@ -302,7 +314,7 @@ def get_playlist(
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
     playlist = _playlist_access(playlist_id, db, user)
-    item_filters = [PlaylistItem.playlist_id == playlist.id, Video.status == "ready"]
+    item_filters = [\n        PlaylistItem.playlist_id == playlist.id,\n        Video.status == "ready",\n        Video.visibility != "private",\n    ]
     if playlist.visibility != "private":
         item_filters.append(Video.visibility == "public")
     items = (
