@@ -163,6 +163,9 @@ class Video(Base):
     access_grants: orm.Mapped[list[VideoAccessGrant]] = orm.relationship(
         back_populates="video", cascade="all, delete-orphan"
     )
+    view_count: orm.Mapped[int] = orm.mapped_column(
+        sa.BigInteger, nullable=False, default=0, server_default="0"
+    )
 
 
 class VideoAccessGrant(Base):
@@ -222,13 +225,94 @@ class AuthSession(Base):
     user: orm.Mapped[User] = orm.relationship(back_populates="auth_sessions")
 
 
+
+class VideoReaction(Base):
+    __tablename__ = "video_reactions"
+    __table_args__ = (
+        sa.CheckConstraint("reaction IN ('like', 'dislike')", name="valid_reaction"),
+        sa.Index("ix_video_reactions_user_id", "user_id"),
+    )
+
+    video_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    reaction: orm.Mapped[str] = orm.mapped_column(sa.String(10), nullable=False)
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class Comment(Base):
+    __tablename__ = "comments"
+    __table_args__ = (
+        sa.CheckConstraint("length(trim(body)) > 0 AND length(body) <= 2000", name="valid_body"),
+        sa.Index("ix_comments_video_created_at", "video_id", "created_at"),
+        sa.Index("ix_comments_parent_id", "parent_id"),
+    )
+
+    id: orm.Mapped[UUID] = orm.mapped_column(sa.Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    video_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    parent_id: orm.Mapped[UUID | None] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("comments.id", ondelete="CASCADE")
+    )
+    body: orm.Mapped[str] = orm.mapped_column(sa.Text, nullable=False)
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    updated_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now()
+    )
+    author: orm.Mapped[User] = orm.relationship()
+
+
+class VideoShare(Base):
+    __tablename__ = "video_shares"
+
+    video_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("videos.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class ChannelSubscription(Base):
+    __tablename__ = "channel_subscriptions"
+    __table_args__ = (sa.Index("ix_channel_subscriptions_channel_id", "channel_id"),)
+
+    subscriber_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    channel_id: orm.Mapped[UUID] = orm.mapped_column(
+        sa.Uuid(as_uuid=True), sa.ForeignKey("channels.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
 __all__ = [
     "AuthSession",
+    "ChannelSubscription",
+    "Comment",
     "Base",
     "Channel",
     "Role",
     "User",
     "Video",
+    "VideoReaction",
+    "VideoShare",
     "VideoAccessGrant",
     "user_roles",
 ]
