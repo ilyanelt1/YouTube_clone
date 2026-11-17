@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
@@ -205,6 +205,8 @@ def remove_comment(
         video is None or video.channel.owner_id != user.id
     ):
         raise HTTPException(status_code=404, detail="Comment not found")
+    if comment.parent_id is None:
+        db.execute(delete(Comment).where(Comment.parent_id == comment.id))
     db.delete(comment)
     db.commit()
 
