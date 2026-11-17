@@ -420,7 +420,6 @@ class Notification(Base):
     )
 
 
-
 __all__ = [
     "AuthSession",
     "ChannelSubscription",
