@@ -16,7 +16,7 @@ A YouTube-inspired video hosting MVP built with FastAPI, PostgreSQL, S3-compatib
 - Browser upload progress indicator.
 - HTTP byte-range streaming for playback and seeking.
 - Video likes/dislikes, threaded comments, comment moderation by authors and channel owners.
-- Video reposts with per-user duplicate protection, share links with unique per-user share counts, playback view counters and channel subscriptions.
+- Video reposts with per-user duplicate protection, share links with unique per-user share counts, playback view counters and channel subscriptions.\n- Public channel pages with creator video catalogs and a personalized subscriptions feed.\n- Signed-in watch history, saved favorites and user-managed playlists with public, unlisted and private visibility.\n- Video search by title/description with channel, popularity, publication date and duration filters.\n- In-app notifications for new subscribers, new videos from followed channels, likes, comments and comment replies.
 - Docker Compose services for PostgreSQL 17, Redis, S3-compatible storage, backend and frontend.
 
 ## Stack
@@ -54,7 +54,7 @@ Python 3.14, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 17, boto3, S3-compatible
 - `GET /api/v1/auth/me`
 
 ### Videos
-- `GET /api/v1/videos` — public feed; optional `q`, `limit`, `offset`.
+- `GET /api/v1/videos` — public feed and search; optional `q`, `channel`, `sort` (`newest`, `oldest`, `popular`), `duration` (`short`, `long`), `limit`, `offset`.
 - `POST /api/v1/videos/upload` — authenticated multipart upload. Required: `title`, `file`; optional: `description`, `visibility` (`public`, `unlisted`, `private`), `thumbnail`.
 - `GET /api/v1/videos/mine` — authenticated user's videos.
 - `GET /api/v1/videos/{id}` — video metadata (private videos require the owner session).
@@ -62,6 +62,19 @@ Python 3.14, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 17, boto3, S3-compatible
 - `GET /api/v1/videos/{id}/thumbnail` — cover image.
 - `PATCH /api/v1/videos/{id}` — owner-only update of title, description and visibility.
 - `DELETE /api/v1/videos/{id}` — owner-only deletion of the database record and stored media objects.
+
+
+### Channels and personal library
+- `GET /api/v1/channels/{handle}` — public channel profile, subscriber count and public videos.
+- `GET /api/v1/feed/subscriptions` — latest public videos from subscribed channels.
+- `GET /api/v1/users/me/history` / `DELETE /api/v1/users/me/history` — signed-in watch history and clear history.
+- `GET /api/v1/users/me/favorites` — saved videos.
+- `PUT` / `DELETE /api/v1/videos/{id}/favorite` — save or remove a favorite.
+- `GET /api/v1/playlists/mine`, `POST /api/v1/playlists` — list and create playlists.
+- `GET` / `PATCH` / `DELETE /api/v1/playlists/{id}` — view, update and delete a playlist.
+- `POST` / `DELETE /api/v1/playlists/{id}/videos/{video_id}` — add or remove a playlist item.
+- `GET /api/v1/notifications` — recent notifications and unread count.
+- `POST /api/v1/notifications/{id}/read` / `POST /api/v1/notifications/read-all` — mark notifications as read.
 
 ### Social interactions
 - `GET /api/v1/videos/{id}/engagement` — likes, dislikes, comments, shares, views and the current user reaction.
@@ -94,4 +107,4 @@ docker compose down
 
 ## Current MVP limitations
 
-Video transcoding, automatic cover generation, resumable/chunked uploads, upload cancellation, playlists, notifications and background processing are not implemented yet. Covers can be uploaded manually. Social features are an MVP: view counts are incremented when the watch page opens, and share counts track unique signed-in users rather than external share destinations. Reposts are stored per user and counted, but are not yet shown in a dedicated public repost feed. Do not expose the storage console or database publicly. For an Internet-facing deployment, put HTTPS in front of the frontend and configure firewall rules and backups.
+Video transcoding, automatic cover generation, resumable/chunked uploads, upload cancellation, realtime push notifications, playlist collaboration and background processing are not implemented yet. Covers can be uploaded manually. Social features are an MVP: view counts are incremented when the watch page opens, and share counts track unique signed-in users rather than external share destinations. Reposts are stored per user and counted, but are not yet shown in a dedicated public repost feed. Notifications are in-app and refreshed when the notification panel is opened. Do not expose the storage console or database publicly. For an Internet-facing deployment, put HTTPS in front of the frontend and configure firewall rules and backups.
