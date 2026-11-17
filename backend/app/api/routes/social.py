@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
-from app.models import Channel, Comment, User, Video, VideoReaction, VideoShare
+from app.models import Channel, ChannelSubscription, Comment, User, Video, VideoReaction, VideoShare
 
 router = APIRouter(tags=["social"])
 
@@ -226,7 +226,7 @@ def subscribe(
     if subscription is None:
         db.add(ChannelSubscription(subscriber_id=user.id, channel_id=channel.id))
         db.commit()
-    return subscription_status(handle, db, user)
+    return _subscription_status(handle, db, user)
 
 
 @router.delete("/channels/{handle}/subscription")
@@ -242,15 +242,19 @@ def unsubscribe(
     if subscription is not None:
         db.delete(subscription)
         db.commit()
-    return subscription_status(handle, db, user)
+    return _subscription_status(handle, db, user)
 
 
 @router.get("/channels/{handle}/subscription")
-def subscription_status(
+def get_subscription_status(
     handle: str,
-    db: Session,
-    user: User | None,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
+    return _subscription_status(handle, db, user)
+
+
+def _subscription_status(handle: str, db: Session, user: User | None) -> dict:
     channel = db.scalar(select(Channel).where(Channel.handle == handle))
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
