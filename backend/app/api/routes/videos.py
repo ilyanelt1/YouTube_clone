@@ -75,7 +75,9 @@ def list_videos(
         statement = statement.where(Video.title.ilike(pattern))
         count_statement = count_statement.where(Video.title.ilike(pattern))
     videos = db.scalars(statement.offset(offset).limit(limit)).unique().all()
-    return VideoList(items=[_video_read(video) for video in videos], total=db.scalar(count_statement) or 0)
+    return VideoList(
+        items=[_video_read(video) for video in videos], total=db.scalar(count_statement) or 0
+    )
 
 
 @router.post("/upload", response_model=VideoRead, status_code=status.HTTP_201_CREATED)
@@ -117,7 +119,9 @@ def upload_video_endpoint(
         db.refresh(video)
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=502, detail="Video storage is temporarily unavailable") from exc
+        raise HTTPException(
+            status_code=502, detail="Video storage is temporarily unavailable"
+        ) from exc
     return _video_read(video)
 
 
@@ -194,11 +198,15 @@ def play_video(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Video playback is temporarily unavailable") from exc
+        raise HTTPException(
+            status_code=502, detail="Video playback is temporarily unavailable"
+        ) from exc
 
     if total_size is None:
         total_size = result["TotalLength"]
-    headers["Content-Type"] = result.get("ContentType") or video.mime_type or "application/octet-stream"
+    headers["Content-Type"] = (
+        result.get("ContentType") or video.mime_type or "application/octet-stream"
+    )
     if not range_header:
         headers["Content-Length"] = str(total_size)
     body = result["Body"]
