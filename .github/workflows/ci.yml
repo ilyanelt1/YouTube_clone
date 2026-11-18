@@ -6,6 +6,7 @@ on:
       - main
       - "feature/**"
       - "ci/**"
+      - "infra/**"
   pull_request:
     branches:
       - main
@@ -113,5 +114,11 @@ jobs:
           alembic -c backend/alembic.ini upgrade head
           alembic -c backend/alembic.ini current
 
-      - name: Validate Compose configuration
+      - name: Validate development Compose
         run: docker compose config --quiet
+
+      - name: Validate production Compose
+        run: |
+          cp .env.production.example .env.production
+          bash -n scripts/init-production-env.sh
+          docker compose --env-file .env.production -f docker-compose.production.yml config --quiet
