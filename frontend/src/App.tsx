@@ -27,7 +27,7 @@ type Engagement = { likes: number; dislikes: number; comments: number; shares: n
 
 type SocialComment = { id: string; video_id: string; parent_id: string | null; body: string; author_name: string; author_handle: string; created_at: string; updated_at: string };
 
-type ChannelPage = { handle: string; name: string; description: string | null; subscribers: number; subscribed: boolean; videos: { items: Video[]; total: number } };
+type ChannelPage = { handle: string; name: string; description: string | null; subscribers: number; subscribed: boolean; videos: { items: Video[]; total: number }; playlists: PlaylistSummary[] };
 type PlaylistSummary = { id: string; title: string; description: string | null; visibility: "public" | "unlisted" | "private"; video_count: number };
 type PlaylistDetails = PlaylistSummary & { videos: { items: Video[]; total: number } };
 type NotificationItem = { id: string; kind: string; message: string; video_id: string | null; comment_id: string | null; read: boolean; created_at: string };
@@ -126,6 +126,7 @@ export default function App() {
   const [channelPage, setChannelPage] = useState<ChannelPage | null>(null);
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<PlaylistDetails | null>(null);
+  const [selectedChannelPlaylist, setSelectedChannelPlaylist] = useState<PlaylistDetails | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -247,9 +248,18 @@ export default function App() {
   async function loadChannel(handle: string) {
     try {
       const result = await api<ChannelPage>(`/channels/${encodeURIComponent(handle)}`, {}, token ?? undefined);
-      setChannelPage(result); setVideos(result.videos.items); setPage("channel");
+      setChannelPage(result); setVideos(result.videos.items); setSelectedChannelPlaylist(null); setPage("channel");
       setSelected(null); setShowLibrary(false); setShowNotifications(false);
     } catch (err) { setError(err instanceof Error ? err.message : "Не удалось открыть канал"); }
+  }
+
+  async function openChannelPlaylist(playlist: PlaylistSummary) {
+    try {
+      const result = await api<PlaylistDetails>(`/playlists/${playlist.id}`);
+      setSelectedChannelPlaylist(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось открыть плейлист канала");
+    }
   }
 
   async function loadPlaylists() {
@@ -873,15 +883,51 @@ export default function App() {
                 }}>{channelPage.subscribed ? "Вы подписаны" : "Подписаться"}</button>
               )}
             </section>
-            <div className="section-heading"><h2>Видео канала</h2><span className="result-count">{channelPage.videos.total} видео</span></div>
-            <div className="video-grid">
-              {videos.map((video) => (
-                <button className="video-card" key={video.id} onClick={() => setSelected(video)}>
-                  <div className="thumbnail">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}</div>
-                  <div className="video-card-info"><div className="channel-avatar">{video.channel_name.slice(0, 1).toUpperCase()}</div><div><h2>{video.title}</h2><p>{new Date(video.created_at).toLocaleDateString("ru-RU")}</p></div></div>
-                </button>
-              ))}
-            </div>
+            {selectedChannelPlaylist ? (
+              <>
+                <button className="back-link" onClick={() => setSelectedChannelPlaylist(null)}>← К плейлистам канала</button>
+                <div className="section-heading">
+                  <div><p className="eyebrow">ПУБЛИЧНЫЙ ПЛЕЙЛИСТ</p><h2>{selectedChannelPlaylist.title}</h2></div>
+                  <span className="result-count">{selectedChannelPlaylist.videos.total} видео</span>
+                </div>
+                {selectedChannelPlaylist.description && <p className="muted">{selectedChannelPlaylist.description}</p>}
+                <div className="video-grid">
+                  {selectedChannelPlaylist.videos.items.map((video) => (
+                    <button className="video-card" key={video.id} onClick={() => setSelected(video)}>
+                      <div className="thumbnail">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}</div>
+                      <div className="video-card-info"><div className="channel-avatar">{video.channel_name.slice(0, 1).toUpperCase()}</div><div><h2>{video.title}</h2><p>{new Date(video.created_at).toLocaleDateString("ru-RU")}</p></div></div>
+                    </button>
+                  ))}
+                </div>
+                {!selectedChannelPlaylist.videos.items.length && <p className="comments-empty">В этом плейлисте пока нет доступных видео.</p>}
+              </>
+            ) : (
+              <>
+                {channelPage.playlists.length > 0 && (
+                  <>
+                    <div className="section-heading"><h2>Публичные плейлисты</h2><span className="result-count">{channelPage.playlists.length} плейлистов</span></div>
+                    <div className="playlist-grid channel-playlist-grid">
+                      {channelPage.playlists.map((playlist) => (
+                        <button className="playlist-card channel-playlist-card" key={playlist.id} onClick={() => void openChannelPlaylist(playlist)}>
+                          <span className="playlist-icon">☷</span><strong>{playlist.title}</strong>
+                          {playlist.description && <span className="playlist-description">{playlist.description}</span>}
+                          <small>{playlist.video_count} видео</small>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="section-heading"><h2>Видео канала</h2><span className="result-count">{channelPage.videos.total} видео</span></div>
+                <div className="video-grid">
+                  {videos.map((video) => (
+                    <button className="video-card" key={video.id} onClick={() => setSelected(video)}>
+                      <div className="thumbnail">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}</div>
+                      <div className="video-card-info"><div className="channel-avatar">{video.channel_name.slice(0, 1).toUpperCase()}</div><div><h2>{video.title}</h2><p>{new Date(video.created_at).toLocaleDateString("ru-RU")}</p></div></div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         ) : page === "playlists" ? (
           <>

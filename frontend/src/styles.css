@@ -153,3 +153,9 @@ h1{font-size:30px;letter-spacing:-1px;margin:0}
 .moderation-card p{margin:6px 0;color:#aaa;font-size:12px;overflow-wrap:anywhere}
 .moderation-actions{display:flex;flex-wrap:wrap;gap:8px}
 @media(max-width:650px){.moderation-card{align-items:flex-start;flex-direction:column}.moderation-actions{width:100%}}
+
+
+.channel-playlist-grid{margin:0 0 34px}
+.channel-playlist-card{display:flex;align-items:flex-start;text-align:left;cursor:pointer}
+.channel-playlist-card:hover{border-color:#666;background:#242424}
+.playlist-description{color:#aaa;font-size:12px;line-height:1.45;overflow-wrap:anywhere}

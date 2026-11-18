@@ -122,6 +122,11 @@ def get_channel(
         or 0
     )
     videos = db.scalars(videos_query.offset(offset).limit(limit)).unique().all()
+    public_playlists = db.scalars(
+        select(Playlist)
+        .where(Playlist.owner_id == channel.owner_id, Playlist.visibility == "public")
+        .order_by(Playlist.created_at.desc())
+    ).all()
     subscribers = (
         db.scalar(
             select(func.count())
@@ -140,6 +145,7 @@ def get_channel(
         "subscribers": subscribers,
         "subscribed": subscribed,
         "videos": _video_list(videos, total),
+        "playlists": [_playlist_summary(playlist, db) for playlist in public_playlists],
     }
 
 
