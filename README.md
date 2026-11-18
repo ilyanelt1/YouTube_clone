@@ -1,101 +1,149 @@
-# YouTube Clone
+# YouTube Clone — видеохостинг
 
-A YouTube-inspired video hosting MVP built with FastAPI, PostgreSQL, S3-compatible object storage and React.
+Учебный MVP видеохостинга по мотивам YouTube. Проект включает загрузку и потоковую раздачу видео, авторизацию, каналы, социальные функции, персональную библиотеку, модерацию и управление доступом.
 
-## Implemented
+## Возможности
 
-- Email/username registration and login.
-- Argon2id password hashing, short-lived JWT access tokens and rotating HttpOnly refresh sessions.
-- PostgreSQL schema managed by Alembic.
-- Authenticated video upload: MP4, WebM and MOV, up to 500 MB.
-- Server-side validation of MIME type, file signature and file size.
-- Optional JPEG, PNG or WebP cover image upload, up to 5 MB.
-- Public, unlisted and private visibility.
-- Private video details, covers and playback protected by the HttpOnly refresh-session cookie.
-- Public feed, title search, creator's video library, metadata editing and video deletion.
-- Browser upload progress indicator.
-- HTTP byte-range streaming for playback and seeking.
-- Video likes/dislikes, threaded comments, comment moderation by authors and channel owners.
-- Video reposts with per-user duplicate protection, share links with unique per-user share counts, playback view counters and channel subscriptions.\n- Public channel pages with creator video catalogs and a personalized subscriptions feed.\n- Signed-in watch history, saved favorites and user-managed playlists with public, unlisted and private visibility.\n- Video search by title/description with channel, popularity, publication date and duration filters.\n- In-app notifications for new subscribers, new videos from followed channels, likes, comments and comment replies.
-- Docker Compose services for PostgreSQL 17, Redis, S3-compatible storage, backend and frontend.
+### Аккаунты и безопасность
+- Регистрация и вход по электронной почте или имени пользователя.
+- Хеширование паролей с Argon2id.
+- Короткоживущие JWT access-токены и ротация refresh-сессий в HttpOnly cookie.
+- Ролевая модель: **пользователь**, **модератор**, **администратор**.
+- Проверка полномочий выполняется на стороне API.
 
-## Stack
+### Видео и объектное хранилище
+- Загрузка MP4, WebM и MOV размером до 500 МБ.
+- Проверка MIME-типа, сигнатуры файла и размера на сервере.
+- Необязательная загрузка обложки JPEG, PNG или WebP до 5 МБ.
+- Хранение видео и обложек в S3-совместимом объектном хранилище MinIO.
+- Потоковое воспроизведение с поддержкой HTTP Range и перемотки.
+- Видимость видео: публичное, доступ по ссылке, приватное.
+- Для приватного видео владелец может выдавать и отзывать доступ отдельным зарегистрированным пользователям.
+- Редактирование метаданных и удаление видео владельцем.
+- Индикатор прогресса загрузки в интерфейсе.
 
-Python 3.14, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 17, boto3, S3-compatible storage, Redis, React 18, TypeScript, Vite, Nginx and Docker Compose.
+### Каналы и взаимодействие
+- Публичные страницы каналов, подписки и лента новых видео подписок.
+- Лайки, дизлайки, комментарии и ответы, репосты и ссылки для публикации.
+- История просмотров, избранное и пользовательские плейлисты.
+- Поиск по названию и описанию, фильтры по каналу, длительности и сортировка.
+- Уведомления о подписках, публикациях, реакциях и комментариях.
 
-## Run locally
+### Модерация
+- Пользователь может пожаловаться на публичное видео или видео, доступное по ссылке.
+- Причины жалобы: спам, авторские права, травля, насилие, контент для взрослых, недостоверная информация и другое.
+- Модераторы и администраторы видят очередь открытых жалоб.
+- По результатам проверки модератор может скрыть видео или отклонить жалобу.
+- Скрытое видео получает статус `blocked` и перестаёт выдаваться зрителям.
+- Модератор или администратор может восстановить скрытое видео.
+- Только администратор может назначать и менять роли пользователей.
 
-1. Install Docker Engine and the Docker Compose plugin.
-2. Copy the environment template:
+## Технологический стек
+
+- **Backend:** Python 3.14, FastAPI, SQLAlchemy 2, Alembic.
+- **База данных:** PostgreSQL 17.
+- **Хранилище:** MinIO (S3 API), boto3.
+- **Frontend:** React 18, TypeScript, Vite.
+- **Прокси:** Nginx.
+- **Инфраструктура:** Docker Compose.
+- **API-документация:** Swagger UI — `/docs`.
+
+## Запуск локально
+
+Требуются Docker Engine и плагин Docker Compose.
+
+1. Создайте файл окружения:
    ```bash
    cp .env.example .env
    ```
-3. Change the passwords in `.env`. Generate a secret with:
+2. Замените пароли в `.env`. Сгенерируйте секретный ключ:
    ```bash
    openssl rand -hex 32
    ```
-   Put the generated value in `SECRET_KEY`. Keep the PostgreSQL password identical in `POSTGRES_PASSWORD` and `DATABASE_URL`; keep the storage password identical in `MINIO_ROOT_PASSWORD` and `S3_SECRET_KEY`.
-4. Build and start the stack:
+   Запишите значение в `SECRET_KEY`. Пароль PostgreSQL в `POSTGRES_PASSWORD` должен совпадать с паролем в `DATABASE_URL`. Пароль MinIO в `MINIO_ROOT_PASSWORD` должен совпадать с `S3_SECRET_KEY`.
+3. Соберите и запустите сервисы:
    ```bash
    docker compose up --build -d
    ```
-5. Open:
-   - Frontend: http://localhost:8083
-   - API documentation: http://localhost:8003/docs
-   - Storage console (local machine only): http://localhost:9003
+4. Откройте:
+   - Приложение: http://localhost:8083
+   - Swagger: http://localhost:8003/docs
+   - Консоль MinIO (только локально): http://localhost:9003
 
-## Main API
+Миграции базы данных запускаются при старте backend-контейнера. Проверить состояние:
+```bash
+docker compose ps
+docker compose logs -f backend
+docker compose exec backend alembic current
+```
 
-### Authentication
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/refresh`
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/auth/me`
+## Роли и первоначальная настройка администратора
 
-### Videos
-- `GET /api/v1/videos` — public feed and search; optional `q`, `channel`, `sort` (`newest`, `oldest`, `popular`), `duration` (`short`, `long`), `limit`, `offset`.
-- `POST /api/v1/videos/upload` — authenticated multipart upload. Required: `title`, `file`; optional: `description`, `visibility` (`public`, `unlisted`, `private`), `thumbnail`, client-detected `duration_seconds`.
-- `GET /api/v1/videos/mine` — authenticated user's videos.
-- `GET /api/v1/videos/{id}` — video metadata (private videos require the owner session).
-- `GET /api/v1/videos/{id}/play` — streamed playback with HTTP byte-range support.
-- `GET /api/v1/videos/{id}/thumbnail` — cover image.
-- `PATCH /api/v1/videos/{id}` — owner-only update of title, description and visibility.
-- `DELETE /api/v1/videos/{id}` — owner-only deletion of the database record and stored media objects.
+Миграции создают роли `user`, `moderator` и `admin`. При регистрации каждому аккаунту автоматически назначается роль `user`. Назначение привилегированных ролей доступно только из доверенной консоли сервера или через API администратора.
 
+После регистрации аккаунта, которому нужно выдать права администратора, выполните:
+```bash
+docker compose exec backend python -m app.cli ИМЯ_ПОЛЬЗОВАТЕЛЯ admin
+```
 
-### Channels and personal library
-- `GET /api/v1/channels/{handle}` — public channel profile, subscriber count and public videos.
-- `GET /api/v1/feed/subscriptions` — latest public videos from subscribed channels.
-- `GET /api/v1/users/me/history` / `DELETE /api/v1/users/me/history` — signed-in watch history and clear history.
-- `GET /api/v1/users/me/favorites` — saved videos.
-- `PUT` / `DELETE /api/v1/videos/{id}/favorite` — save or remove a favorite.
-- `GET /api/v1/playlists/mine`, `POST /api/v1/playlists` — list and create playlists.
-- `GET` / `PATCH` / `DELETE /api/v1/playlists/{id}` — view, update and delete a playlist.
-- `POST` / `DELETE /api/v1/playlists/{id}/videos/{video_id}` — add or remove a playlist item.
-- `GET /api/v1/notifications` — recent notifications and unread count.
-- `POST /api/v1/notifications/{id}/read` / `POST /api/v1/notifications/read-all` — mark notifications as read.
+Назначение модератора:
+```bash
+docker compose exec backend python -m app.cli ИМЯ_ПОЛЬЗОВАТЕЛЯ moderator
+```
 
-### Social interactions
-- `GET /api/v1/videos/{id}/engagement` — likes, dislikes, comments, shares, views and the current user reaction.
-- `PUT /api/v1/videos/{id}/reaction` — set `like`, `dislike` or `null` to remove a reaction.
-- `GET /api/v1/videos/{id}/comments` — list comments and replies.
-- `POST /api/v1/videos/{id}/comments` — add a comment; optional `parent_id` creates a reply.
-- `PATCH /api/v1/comments/{id}` / `DELETE /api/v1/comments/{id}` — edit or delete your own comment; video owners can moderate comments under their videos.
-- `PUT` / `DELETE /api/v1/videos/{id}/repost` — repost a video or undo your repost.
-- `POST /api/v1/videos/{id}/share` — create a unique share record and return a deep link.
-- `POST /api/v1/videos/{id}/view` — increment the playback view counter.
-- `GET /api/v1/channels/{handle}/subscription` — subscription state and subscriber count.
-- `PUT` / `DELETE /api/v1/channels/{handle}/subscription` — subscribe or unsubscribe.
+Не выдавайте роль администратора через публичную регистрацию. Не передавайте токены и доступ к серверу посторонним.
 
-## Upload limits and formats
+## Основные маршруты API
 
-- Video: MP4, WebM, MOV; maximum 500 MB.
-- Cover image: JPEG, PNG, WebP; maximum 5 MB.
-- The browser checks the selected file before sending it; the API repeats the checks and validates the file signature.
-- Nginx allows request bodies up to 520 MB so multipart uploads can reach the API.
+Префикс всех маршрутов: `/api/v1`.
 
-## Useful commands
+### Авторизация
+- `POST /auth/register` — регистрация.
+- `POST /auth/login` — вход.
+- `POST /auth/refresh` — обновление access-токена.
+- `POST /auth/logout` — выход.
+- `GET /auth/me` — профиль и назначенные роли.
+
+### Видео
+- `GET /videos` — публичная лента и поиск. Параметры: `q`, `channel`, `sort` (`newest`, `oldest`, `popular`), `duration` (`short`, `long`), `limit`, `offset`.
+- `POST /videos/upload` — загрузка видео. Обязательные поля: `title`, `file`; дополнительные: `description`, `visibility`, `thumbnail`, `duration_seconds`.
+- `GET /videos/mine` — видео текущего пользователя.
+- `GET /videos/{id}` — метаданные видео с проверкой доступа.
+- `GET /videos/{id}/play` — потоковое воспроизведение с HTTP Range.
+- `GET /videos/{id}/thumbnail` — обложка с проверкой доступа.
+- `PATCH /videos/{id}` и `DELETE /videos/{id}` — изменение и удаление видео владельцем.
+- `GET /videos/{id}/access-grants` — список пользователей с доступом к приватному видео (владелец).
+- `PUT /videos/{id}/access-grants` — выдать доступ по имени пользователя (владелец).
+- `DELETE /videos/{id}/access-grants/{user_id}` — отозвать доступ (владелец).
+
+### Жалобы и модерация
+- `POST /moderation/videos/{id}/reports` — пожаловаться на видео (авторизованный пользователь).
+- `GET /moderation/reports?status=open` — очередь жалоб (модератор или администратор).
+- `PATCH /moderation/reports/{id}` с `{"action":"hide"}` или `{"action":"dismiss"}` — обработать жалобу.
+- `GET /moderation/blocked-videos` — список скрытых видео.
+- `POST /moderation/videos/{id}/restore` — восстановить видео.
+- `PUT /moderation/users/{user_id}/roles` с `{"roles":["user","moderator"]}` — назначить роли (только администратор).
+
+### Каналы, библиотека и социальные функции
+- `GET /channels/{handle}` — публичный канал и его видео.
+- `GET /feed/subscriptions` — лента подписок.
+- `GET` / `DELETE /users/me/history` — история просмотров и её очистка.
+- `GET /users/me/favorites`, `PUT` / `DELETE /videos/{id}/favorite` — избранное.
+- `GET /playlists/mine`, `POST /playlists`, `GET/PATCH/DELETE /playlists/{id}` — плейлисты.
+- `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all` — уведомления.
+- `GET /videos/{id}/engagement`, `PUT /videos/{id}/reaction` — реакции и статистика.
+- `GET/POST /videos/{id}/comments`, `PATCH/DELETE /comments/{id}` — комментарии и ответы.
+- `PUT/DELETE /videos/{id}/repost`, `POST /videos/{id}/share` — репосты и публикация ссылки.
+- `PUT/DELETE /channels/{handle}/subscription` — подписка на канал.
+
+## Ограничения загрузки
+
+- Видео: MP4, WebM, MOV — до 500 МБ.
+- Обложка: JPEG, PNG, WebP — до 5 МБ.
+- Файлы проверяются и в браузере, и на сервере.
+- Nginx принимает тела запросов до 520 МБ.
+
+## Полезные команды
 
 ```bash
 docker compose ps
@@ -105,6 +153,21 @@ docker compose exec backend alembic current
 docker compose down
 ```
 
-## Current MVP limitations
+## Известные ограничения MVP
 
-Video transcoding, automatic cover generation, resumable/chunked uploads, upload cancellation, realtime push notifications, playlist collaboration and background processing are not implemented yet. Covers can be uploaded manually. Social features are an MVP: view counts are incremented when the watch page opens, and share counts track unique signed-in users rather than external share destinations. Reposts are stored per user and counted, but are not yet shown in a dedicated public repost feed. Notifications are in-app and refreshed when the notification panel is opened. Do not expose the storage console or database publicly. For an Internet-facing deployment, put HTTPS in front of the frontend and configure firewall rules and backups.
+- Нет транскодирования видео, автоматической генерации обложек и фоновой обработки.
+- Загрузка не поддерживает докачку и разбиение на части.
+- Уведомления обновляются при открытии панели, без WebSocket и push-доставки.
+- Совместное редактирование плейлистов не реализовано.
+- Счётчик просмотров увеличивается при открытии страницы просмотра.
+- Счётчик репостов учитывает уникальных пользователей, но отдельной публичной ленты репостов нет.
+- Для публичного развёртывания необходимо настроить HTTPS, firewall, резервное копирование и закрыть доступ извне к БД и панели MinIO.
+
+## Документация
+
+- [Архитектура](docs/architecture.md)
+- [Схема базы данных](docs/database.md)
+- [Авторизация](docs/authentication.md)
+- [Безопасность](docs/security.md)
+- [Развёртывание](docs/deployment.md)
+- [Тестирование](docs/testing.md)

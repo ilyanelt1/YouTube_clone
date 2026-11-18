@@ -5,6 +5,7 @@ type User = {
   username: string;
   display_name: string;
   email: string;
+  roles: string[];
 };
 
 type Video = {
@@ -30,6 +31,9 @@ type ChannelPage = { handle: string; name: string; description: string | null; s
 type PlaylistSummary = { id: string; title: string; description: string | null; visibility: "public" | "unlisted" | "private"; video_count: number };
 type PlaylistDetails = PlaylistSummary & { videos: { items: Video[]; total: number } };
 type NotificationItem = { id: string; kind: string; message: string; video_id: string | null; comment_id: string | null; read: boolean; created_at: string };
+type ModerationReport = { id: string; video_id: string; video_title: string; video_status: string; channel: string; reporter: string; reason: string; description: string | null; status: string; created_at: string };
+type BlockedVideo = { id: string; title: string; channel: string; visibility: string };
+type AccessGrant = { user_id: string; username: string };
 
 type AuthResponse = {
   access_token: string;
@@ -118,7 +122,7 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<File | null>(null);
-  const [page, setPage] = useState<"home" | "subscriptions" | "history" | "favorites" | "channel" | "playlists">("home");
+  const [page, setPage] = useState<"home" | "subscriptions" | "history" | "favorites" | "channel" | "playlists" | "moderation">("home");
   const [channelPage, setChannelPage] = useState<ChannelPage | null>(null);
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<PlaylistDetails | null>(null);
@@ -129,6 +133,8 @@ export default function App() {
   const [durationFilter, setDurationFilter] = useState<"" | "short" | "long">("");
   const [channelFilter, setChannelFilter] = useState("");
   const [saved, setSaved] = useState(false);
+  const [moderationReports, setModerationReports] = useState<ModerationReport[]>([]);
+  const [blockedVideos, setBlockedVideos] = useState<BlockedVideo[]>([]);
 
   const loadVideos = useCallback(async (
     search = "",
@@ -618,6 +624,98 @@ export default function App() {
     }
   }
 
+
+  async function loadModerationPanel() {
+    if (!token) return;
+    try {
+      const [reports, blocked] = await Promise.all([
+        api<ModerationReport[]>("/moderation/reports?status=open", {}, token),
+        api<BlockedVideo[]>("/moderation/blocked-videos", {}, token),
+      ]);
+      setModerationReports(reports);
+      setBlockedVideos(blocked);
+      setPage("moderation");
+      setSelected(null);
+      setShowLibrary(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось открыть панель модерации");
+    }
+  }
+
+  async function decideModerationReport(reportId: string, action: "hide" | "dismiss") {
+    if (!token) return;
+    try {
+      await api(`/moderation/reports/${reportId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      }, token);
+      await loadModerationPanel();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось обработать жалобу");
+    }
+  }
+
+  async function restoreModeratedVideo(videoId: string) {
+    if (!token) return;
+    try {
+      await api(`/moderation/videos/${videoId}/restore`, { method: "POST" }, token);
+      await loadModerationPanel();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось восстановить видео");
+    }
+  }
+
+  async function reportSelectedVideo() {
+    if (!token || !selected) return;
+    const reason = window.prompt("Причина жалобы: spam, copyright, harassment, violence, adult, misinformation или other", "spam");
+    if (!reason) return;
+    const description = window.prompt("Комментарий к жалобе (необязательно)") ?? "";
+    try {
+      await api(`/moderation/videos/${selected.id}/reports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason, description }),
+      }, token);
+      setError("Жалоба отправлена на проверку");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось отправить жалобу");
+    }
+  }
+
+  async function managePrivateAccess(video: Video) {
+    if (!token || video.visibility !== "private") return;
+    try {
+      const grants = await api<AccessGrant[]>(`/videos/${video.id}/access-grants`, {}, token);
+      const current = grants.map((grant) => `@${grant.username}`).join(", ") || "нет";
+      const command = window.prompt(`Сейчас доступ есть у: ${current}. Введите +имя для выдачи или -имя для отзыва доступа.`);
+      if (!command) return;
+      const username = command.slice(1).trim().replace(/^@/, "");
+      if (!username || !["+", "-"].includes(command[0])) {
+        setError("Используйте формат +имя или -имя");
+        return;
+      }
+      if (command[0] === "+") {
+        await api(`/videos/${video.id}/access-grants`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username }),
+        }, token);
+        setError(`Доступ выдан пользователю @${username}`);
+      } else {
+        const grant = grants.find((item) => item.username.toLowerCase() === username.toLowerCase());
+        if (!grant) {
+          setError(`У пользователя @${username} нет доступа к этому видео`);
+          return;
+        }
+        await api(`/videos/${video.id}/access-grants/${grant.user_id}`, { method: "DELETE" }, token);
+        setError(`Доступ пользователя @${username} отозван`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось изменить список доступа");
+    }
+  }
+
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSelected(null);
@@ -654,6 +752,7 @@ export default function App() {
               <button className="outline-button nav-button" onClick={() => void loadPersonalVideos("history")}>История</button>
               <button className="outline-button nav-button" onClick={() => void loadPersonalVideos("favorites")}>Избранное</button>
               <button className="outline-button nav-button" onClick={() => void loadPlaylists()}>Плейлисты</button>
+              {(user.roles.includes("moderator") || user.roles.includes("admin")) && <button className="outline-button nav-button" onClick={() => void loadModerationPanel()}>Модерация</button> }
               <div className="notification-anchor">
                 <button className="icon-button notification-trigger" onClick={() => void toggleNotifications()} title="Уведомления">♢{unreadNotifications > 0 ? <span className="notification-count">{unreadNotifications}</span> : null}</button>
                 {showNotifications && (
@@ -694,6 +793,7 @@ export default function App() {
               <button className="social-button" onClick={() => void shareVideo()}>↗ Поделиться · {engagement?.shares ?? 0}</button>
               <button className={saved ? "social-button active" : "social-button"} onClick={() => void toggleFavorite()}>{saved ? "★ В избранном" : "☆ В избранное"}</button>
               <button className="social-button" onClick={() => void addCurrentToPlaylist()}>＋ В плейлист</button>
+              {user && user.username !== selected.channel_handle && selected.visibility !== "private" && <button className="social-button" onClick={() => void reportSelectedVideo()}>⚑ Пожаловаться</button>}
               <span className="social-muted">◉ {engagement?.views ?? 0} просмотров</span>
             </div>
             {user && user.username !== selected.channel_handle && (
@@ -730,6 +830,29 @@ export default function App() {
               </div>
             </section>
           </section>
+        ) : page === "moderation" ? (
+          <>
+            <div className="section-heading"><div><p className="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</p><h1>Модерация</h1></div><span className="result-count">{moderationReports.length} открытых жалоб</span></div>
+            <h2 className="moderation-subtitle">Очередь жалоб</h2>
+            {moderationReports.length ? <div className="moderation-list">
+              {moderationReports.map((report) => (
+                <article className="moderation-card" key={report.id}>
+                  <div><strong>{report.video_title}</strong><p>Канал: @{report.channel} · Жалоба от @{report.reporter}</p><p>Причина: {report.reason}</p>{report.description && <p>{report.description}</p>}</div>
+                  <div className="moderation-actions">
+                    <button className="small-button danger-button" onClick={() => void decideModerationReport(report.id, "hide")}>Скрыть видео</button>
+                    <button className="small-button" onClick={() => void decideModerationReport(report.id, "dismiss")}>Отклонить жалобу</button>
+                  </div>
+                </article>
+              ))}
+            </div> : <p className="comments-empty">Открытых жалоб нет.</p>}
+            <h2 className="moderation-subtitle">Скрытые видео</h2>
+            {blockedVideos.length ? <div className="moderation-list">
+              {blockedVideos.map((video) => <article className="moderation-card" key={video.id}>
+                <div><strong>{video.title}</strong><p>Канал: @{video.channel}</p></div>
+                <button className="small-button" onClick={() => void restoreModeratedVideo(video.id)}>Восстановить</button>
+              </article>)}
+            </div> : <p className="comments-empty">Скрытых видео нет.</p>}
+          </>
         ) : page === "channel" && channelPage ? (
           <>
             <button className="back-link" onClick={() => { setPage("home"); setChannelPage(null); void loadVideos(); }}>← Все видео</button>
@@ -827,6 +950,7 @@ export default function App() {
                     </button>
                     <div className="video-actions">
                       <button className="small-button" onClick={() => openEditor(video)}>Изменить</button>
+                      {video.visibility === "private" && <button className="small-button" onClick={() => void managePrivateAccess(video)}>Доступ</button>}
                       <button className="small-button danger-button" disabled={busy} onClick={() => void removeVideo(video)}>Удалить</button>
                     </div>
                   </article>
@@ -912,7 +1036,7 @@ export default function App() {
                 <select name="visibility" defaultValue="public">
                   <option value="public">Открытый доступ — в общем каталоге</option>
                   <option value="unlisted">Доступ по ссылке — скрыто из каталога</option>
-                  <option value="private">Приватное — только владелец</option>
+                  <option value="private">Приватное — владелец и пользователи с разрешением</option>
                 </select>
               </label>
               <label className="file-picker">Выбрать видеофайл

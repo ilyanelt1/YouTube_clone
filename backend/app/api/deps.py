@@ -69,3 +69,19 @@ def get_current_user(
         raise unauthorized
 
     return user
+
+
+def require_roles(*allowed_roles: str):
+    """Создаёт зависимость с проверкой ролей пользователя."""
+
+    def role_dependency(
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        if not any(role.name in allowed_roles for role in current_user.roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Недостаточно прав",
+            )
+        return current_user
+
+    return role_dependency

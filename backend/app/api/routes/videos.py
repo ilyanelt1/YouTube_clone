@@ -15,12 +15,13 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
-from app.models import Channel, ChannelSubscription, Notification, User, Video
+from app.models import Channel, ChannelSubscription, Notification, User, Video, VideoAccessGrant
 from app.schemas.video import VideoList, VideoRead, VideoUpdate
 from app.services.storage import (
     delete_object,
@@ -142,10 +143,13 @@ def _get_accessible_video(
     video = db.scalar(select(Video).where(Video.id == video_id, Video.status == "ready"))
     if video is None:
         raise HTTPException(status_code=404, detail="Video not found")
-    if video.visibility == "private" and (
-        current_user is None or video.channel.owner_id != current_user.id
-    ):
-        raise HTTPException(status_code=404, detail="Video not found")
+    if video.visibility == "private":
+        has_access = current_user is not None and (
+            video.channel.owner_id == current_user.id
+            or db.get(VideoAccessGrant, (video.id, current_user.id)) is not None
+        )
+        if not has_access:
+            raise HTTPException(status_code=404, detail="Video not found")
     return video
 
 
@@ -364,6 +368,75 @@ def delete_video(
     db.commit()
     _delete_storage_object(video_key)
     _delete_storage_object(thumbnail_key)
+
+
+class PrivateAccessGrantRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=30)
+
+
+@router.get("/{video_id}/access-grants")
+def list_video_access_grants(
+    video_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[dict]:
+    video = db.scalar(
+        select(Video).join(Channel).where(Video.id == video_id, Channel.owner_id == current_user.id)
+    )
+    if video is None or video.visibility != "private":
+        raise HTTPException(status_code=404, detail="Приватное видео не найдено")
+    grants = db.scalars(select(VideoAccessGrant).where(VideoAccessGrant.video_id == video.id)).all()
+    return [
+        {"user_id": str(grant.user_id), "username": db.get(User, grant.user_id).username}
+        for grant in grants
+        if db.get(User, grant.user_id) is not None
+    ]
+
+
+@router.put("/{video_id}/access-grants")
+def grant_video_access(
+    video_id: UUID,
+    payload: PrivateAccessGrantRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    video = db.scalar(
+        select(Video).join(Channel).where(Video.id == video_id, Channel.owner_id == current_user.id)
+    )
+    if video is None or video.visibility != "private":
+        raise HTTPException(status_code=404, detail="Приватное видео не найдено")
+    target = db.scalar(
+        select(User).where(func.lower(User.username) == payload.username.strip().casefold())
+    )
+    if target is None or not target.is_active:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if target.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Владелец уже имеет доступ")
+    if db.get(VideoAccessGrant, (video.id, target.id)) is None:
+        db.add(
+            VideoAccessGrant(video_id=video.id, user_id=target.id, granted_by_id=current_user.id)
+        )
+        db.commit()
+    return {"video_id": str(video.id), "user_id": str(target.id), "username": target.username}
+
+
+@router.delete("/{video_id}/access-grants/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_video_access(
+    video_id: UUID,
+    target_user_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    video = db.scalar(
+        select(Video).join(Channel).where(Video.id == video_id, Channel.owner_id == current_user.id)
+    )
+    if video is None or video.visibility != "private":
+        raise HTTPException(status_code=404, detail="Приватное видео не найдено")
+    grant = db.get(VideoAccessGrant, (video.id, target_user_id))
+    if grant is None:
+        raise HTTPException(status_code=404, detail="Разрешение не найдено")
+    db.delete(grant)
+    db.commit()
 
 
 @router.get("/{video_id}/thumbnail")
