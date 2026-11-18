@@ -88,6 +88,45 @@ def test_channels_feed_history_favorites_playlists_and_notifications(monkeypatch
         assert channel.status_code == 200
         assert channel.json()["name"] == "Creator"
         assert channel.json()["videos"]["total"] == 1
+        assert channel.json()["playlists"] == []
+
+        public_playlist = client.post(
+            "/api/v1/playlists",
+            headers=owner,
+            json={"title": "Public collection", "description": "Creator picks", "visibility": "public"},
+        )
+        unlisted_playlist = client.post(
+            "/api/v1/playlists",
+            headers=owner,
+            json={"title": "Unlisted collection", "visibility": "unlisted"},
+        )
+        private_playlist = client.post(
+            "/api/v1/playlists",
+            headers=owner,
+            json={"title": "Private collection", "visibility": "private"},
+        )
+        assert public_playlist.status_code == 201
+        assert unlisted_playlist.status_code == 201
+        assert private_playlist.status_code == 201
+
+        public_playlist_id = public_playlist.json()["id"]
+        added_to_public = client.post(
+            f"/api/v1/playlists/{public_playlist_id}/videos/{first_video['id']}",
+            headers=owner,
+        )
+        assert added_to_public.status_code == 200
+
+        channel_with_playlists = client.get("/api/v1/channels/creator")
+        assert channel_with_playlists.status_code == 200
+        visible_playlists = channel_with_playlists.json()["playlists"]
+        assert len(visible_playlists) == 1
+        assert visible_playlists[0]["id"] == public_playlist_id
+        assert visible_playlists[0]["visibility"] == "public"
+
+        public_playlist_details = client.get(f"/api/v1/playlists/{public_playlist_id}")
+        assert public_playlist_details.status_code == 200
+        assert public_playlist_details.json()["videos"]["total"] == 1
+        assert public_playlist_details.json()["videos"]["items"][0]["id"] == first_video["id"]
 
         subscription = client.put("/api/v1/channels/creator/subscription", headers=viewer)
         assert subscription.status_code == 200
