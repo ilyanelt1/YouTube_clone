@@ -93,7 +93,11 @@ def test_channels_feed_history_favorites_playlists_and_notifications(monkeypatch
         public_playlist = client.post(
             "/api/v1/playlists",
             headers=owner,
-            json={"title": "Public collection", "description": "Creator picks", "visibility": "public"},
+            json={
+                "title": "Public collection",
+                "description": "Creator picks",
+                "visibility": "public",
+            },
         )
         unlisted_playlist = client.post(
             "/api/v1/playlists",
