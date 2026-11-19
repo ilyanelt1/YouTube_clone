@@ -104,6 +104,18 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         assert removed.json()["dislikes"] == 0
         assert removed.json()["viewer_reaction"] is None
 
+        liked_again = client.put(
+            f"/api/v1/videos/{video_id}/reaction",
+            headers=viewer,
+            json={"reaction": "like"},
+        )
+        assert liked_again.status_code == 200
+        owner_notifications = client.get("/api/v1/notifications", headers=owner)
+        like_notifications = [
+            item for item in owner_notifications.json()["items"] if item["kind"] == "video_like"
+        ]
+        assert len(like_notifications) == 1
+
         root = client.post(
             f"/api/v1/videos/{video_id}/comments",
             headers=viewer,
