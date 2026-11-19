@@ -34,7 +34,9 @@ bash scripts/init-production-env.sh
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.production.yml config --quiet
-docker compose --env-file .env.production -f docker-compose.production.yml up --build -d
+docker compose --env-file .env.production -f docker-compose.production.yml pull db minio redis caddy
+docker compose --env-file .env.production -f docker-compose.production.yml build --pull backend frontend
+docker compose --env-file .env.production -f docker-compose.production.yml up -d
 ```
 
 Проверить состояние и логи:
@@ -58,14 +60,18 @@ docker compose --env-file .env.production -f docker-compose.production.yml exec 
 - Caddy — единственная точка входа с опубликованными портами 80/443; автоматически завершает HTTPS и проксирует запросы на frontend.
 - Frontend — Nginx со статикой и проксированием `/api/` к backend.
 - Backend — FastAPI; в production refresh-cookie получает флаг `Secure`.
-- Migrate — одноразовый сервис Alembic. Он ждёт PostgreSQL и должен завершиться успешно до запуска backend.
+- Migrate — одноразовый сервис Alembic. Он получает только настройки приложения, ключ подписи и URL PostgreSQL, ждёт готовности базы и должен завершиться успешно до запуска backend.
+- Redis получает только собственный пароль; Caddy — только домен и email для ACME. Backend получает только используемые им настройки. Полный `.env.production` не передаётся каждому контейнеру через `env_file`.
 - PostgreSQL, Redis, backend и S3-compatible object storage доступны только во внутренней Docker-сети.
+- PostgreSQL, Redis и S3-compatible storage имеют healthcheck. Backend стартует только после успешной проверки PostgreSQL, Redis и S3, а также после успешного завершения миграций.
 - Backend healthcheck обращается к `/ready`; этот endpoint выполняет `SELECT 1` в PostgreSQL. `/health` — отдельная liveness-проверка процесса.
 - Redis хранит временные ключи дедупликации просмотров с TTL 30 минут. Данные Redis не сохраняются на диск и очищаются после перезапуска контейнера; отдельный volume для Redis не подключён. Redis не входит в readiness, так как при его сбое API считает просмотры без дедупликации.
 - PostgreSQL, S3-объекты и данные Caddy хранятся в именованных Docker volumes.
 - Загрузка видео выполняется синхронно через API. Нет worker, очереди задач, FFmpeg или автоматического транскодирования.
 
 Bucket `youtube-videos` создаётся backend автоматически при первом обращении к хранилищу. Скрипт не импортирует и не переносит старые данные object storage.
+
+**Важно при первом production-запуске:** SeaweedFS MinIO-compatible требует отдельный пустой volume. Не подключайте к нему файловый volume от настоящего MinIO: форматы хранения несовместимы. Если нужно перенести существующие объекты, поднимите старое и новое хранилища с разными volumes и скопируйте данные через S3 API (например, `mc mirror`), затем проверьте количество объектов и чтение файлов до переключения приложения.
 
 ## 5. Создайте администратора
 
