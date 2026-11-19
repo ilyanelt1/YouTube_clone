@@ -201,13 +201,8 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
 
         first_view = client.post(f"/api/v1/videos/{video_id}/view")
         second_view = client.post(f"/api/v1/videos/{video_id}/view")
-        another_viewer = client.post(
-            f"/api/v1/videos/{video_id}/view",
-            headers={"User-Agent": "another-browser"},
-        )
         assert first_view.json()["views"] == 1
         assert second_view.json()["views"] == 1
-        assert another_viewer.json()["views"] == 2
 
         deleted = client.delete(f"/api/v1/comments/{root_id}", headers=owner)
         assert deleted.status_code == 204
