@@ -30,6 +30,7 @@ from app.services.storage import (
     upload_video,
 )
 from app.services.video_access import get_accessible_video
+from app.services.video_serialization import serialize_video as _video_read
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 ALLOWED_VIDEO_TYPES = {
@@ -115,25 +116,6 @@ def _validate_thumbnail(file: UploadFile) -> tuple[str, str, int]:
             status_code=415, detail="The thumbnail content does not match its image format"
         )
     return content_type, extension, size
-
-
-def _video_read(video: Video) -> VideoRead:
-    if not video.storage_key:
-        raise HTTPException(status_code=404, detail="Video file is unavailable")
-    return VideoRead(
-        id=video.id,
-        title=video.title,
-        description=video.description,
-        status=video.status,
-        visibility=video.visibility,
-        file_size_bytes=video.file_size_bytes,
-        mime_type=video.mime_type,
-        created_at=video.created_at,
-        channel_name=video.channel.name,
-        channel_handle=video.channel.handle,
-        playback_url=f"/api/v1/videos/{video.id}/play",
-        thumbnail_url=f"/api/v1/videos/{video.id}/thumbnail" if video.thumbnail_key else None,
-    )
 
 
 def _delete_storage_object(object_key: str | None) -> None:
