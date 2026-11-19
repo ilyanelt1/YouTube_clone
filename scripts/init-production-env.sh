@@ -46,7 +46,6 @@ POSTGRES_IMAGE=postgres:17-alpine
 POSTGRES_DB=youtube
 POSTGRES_USER=youtube
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-DATABASE_URL=postgresql+psycopg://youtube:$POSTGRES_PASSWORD@db:5432/youtube
 
 MINIO_IMAGE=ghcr.io/seaweedfs/minio-compat:latest
 MINIO_ROOT_USER=youtube-storage
