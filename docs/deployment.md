@@ -1,6 +1,6 @@
 # Production deployment
 
-Инструкция рассчитана на один Ubuntu-сервер с публичным IPv4-адресом и доменом. Production-стек отделён от локального `docker-compose.yml`: он использует Caddy для HTTPS, не публикует PostgreSQL, Redis, MinIO и backend в интернет и сохраняет данные в Docker volumes.
+Инструкция рассчитана на один Ubuntu-сервер с публичным IPv4-адресом и доменом. Production-стек отделён от локального `docker-compose.yml`: он использует Caddy для HTTPS, не публикует PostgreSQL, Redis, MinIO и backend в интернет. PostgreSQL и S3-объекты хранятся в Docker volumes; Redis используется как временный in-memory cache без сохранения на диск.
 
 ## 1. Подготовьте сервер и DNS
 
@@ -53,7 +53,8 @@ docker compose --env-file .env.production -f docker-compose.production.yml logs 
 - Backend — FastAPI; в production refresh-cookie получает флаг `Secure`.
 - Migrate — применяет Alembic-миграции и должен завершиться успешно до запуска backend.
 - PostgreSQL, Redis и S3-хранилище доступны только во внутренней Docker-сети.
-- PostgreSQL, Redis, S3-объекты и данные Caddy хранятся в именованных Docker volumes.
+- Redis хранит временные ключи дедупликации просмотров с TTL 30 минут. Данные Redis не сохраняются на диск и очищаются после перезапуска контейнера; отдельный volume для Redis не подключён.
+- PostgreSQL, S3-объекты и данные Caddy хранятся в именованных Docker volumes.
 
 Bucket `youtube-videos` создаётся backend автоматически при первом обращении к хранилищу. Скрипт не импортирует и не переносит старые данные MinIO.
 
@@ -69,7 +70,7 @@ docker compose --env-file .env.production -f docker-compose.production.yml exec 
 
 ## 6. Резервное копирование
 
-Резервная копия PostgreSQL не содержит видео и обложки из S3-хранилища. Сохраняйте базу и volume `minio_data` отдельно, храните копии вне VPS и регулярно проверяйте восстановление.
+Резервная копия PostgreSQL не содержит видео и обложки из S3-хранилища. Redis — временное хранилище, его данные резервировать не нужно. Сохраняйте базу и volume `minio_data` отдельно, храните копии вне VPS и регулярно проверяйте восстановление.
 
 Пример дампа PostgreSQL:
 
