@@ -195,13 +195,13 @@ def list_my_videos(
     statement = (
         select(Video)
         .join(Channel)
-        .where(Channel.owner_id == current_user.id, Video.status == "ready")
+        .where(Channel.owner_id == current_user.id, Video.status.in_(("ready", "blocked")))
         .order_by(Video.created_at.desc())
     )
     count_statement = (
         select(func.count(Video.id))
         .join(Channel)
-        .where(Channel.owner_id == current_user.id, Video.status == "ready")
+        .where(Channel.owner_id == current_user.id, Video.status.in_(("ready", "blocked")))
     )
     videos = db.scalars(statement.offset(offset).limit(limit)).unique().all()
     return VideoList(
@@ -325,8 +325,11 @@ def update_video(
     if "visibility" in changes:
         if changes["visibility"] not in {"public", "unlisted", "private"}:
             raise HTTPException(status_code=422, detail="Invalid visibility")
-        video.visibility = changes["visibility"]
-        video.published_at = datetime.now(UTC) if video.visibility != "private" else None
+        if changes["visibility"] != video.visibility:
+            video.visibility = changes["visibility"]
+            video.published_at = (
+                datetime.now(UTC) if video.visibility != "private" else None
+            )
 
     db.commit()
     db.refresh(video)
