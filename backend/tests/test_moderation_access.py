@@ -82,6 +82,7 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
     try:
         owner_token, owner_id = register(client, "creator")
         viewer_token, viewer_id = register(client, "viewer")
+        second_viewer_token, _ = register(client, "second_viewer")
         moderator_token, moderator_id = register(client, "moderator_user")
         owner = {"Authorization": f"Bearer {owner_token}"}
         viewer = {"Authorization": f"Bearer {viewer_token}"}
@@ -140,6 +141,12 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
             ).status_code
             == 409
         )
+        second_report = client.post(
+            f"/api/v1/moderation/videos/{public_video['id']}/reports",
+            headers={"Authorization": f"Bearer {second_viewer_token}"},
+            json={"reason": "copyright"},
+        )
+        assert second_report.status_code == 201
 
         assert client.get("/api/v1/moderation/reports", headers=viewer).status_code == 403
         assert client.get("/api/v1/moderation/reports").status_code == 401
@@ -153,7 +160,7 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
 
         reports = client.get("/api/v1/moderation/reports", headers=moderator)
         assert reports.status_code == 200
-        assert len(reports.json()) == 1
+        assert len(reports.json()) == 2
         decision = client.patch(
             f"/api/v1/moderation/reports/{report.json()['id']}",
             headers=moderator,
@@ -162,6 +169,21 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         assert decision.status_code == 200
         assert decision.json()["video_status"] == "blocked"
         assert client.get(f"/api/v1/videos/{public_video['id']}").status_code == 404
+        assert client.get(
+            "/api/v1/moderation/reports?status=open", headers=moderator
+        ).json() == []
+        resolved_reports = client.get(
+            "/api/v1/moderation/reports?status=resolved", headers=moderator
+        )
+        assert resolved_reports.status_code == 200
+        assert len(resolved_reports.json()) == 2
+
+        owner_videos = client.get("/api/v1/videos/mine", headers=owner)
+        assert owner_videos.status_code == 200
+        blocked_owner_video = next(
+            item for item in owner_videos.json()["items"] if item["id"] == public_video["id"]
+        )
+        assert blocked_owner_video["status"] == "blocked"
 
         blocked = client.get("/api/v1/moderation/blocked-videos", headers=moderator)
         assert blocked.status_code == 200
