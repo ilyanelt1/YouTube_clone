@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import Role
+from app.models import Notification, Role
 
 VALID_MP4 = b"\x00\x00\x00\x18ftypisomvideo-data"
 
@@ -103,6 +103,33 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         )
         assert removed.json()["dislikes"] == 0
         assert removed.json()["viewer_reaction"] is None
+
+        re_liked = client.put(
+            f"/api/v1/videos/{video_id}/reaction",
+            headers=viewer,
+            json={"reaction": "like"},
+        )
+        assert re_liked.status_code == 200
+        client.put(
+            f"/api/v1/videos/{video_id}/reaction",
+            headers=viewer,
+            json={"reaction": None},
+        )
+        client.put(
+            f"/api/v1/videos/{video_id}/reaction",
+            headers=viewer,
+            json={"reaction": "like"},
+        )
+        with Session(engine) as db:
+            like_notification_count = db.scalar(
+                sa.select(sa.func.count())
+                .select_from(Notification)
+                .where(
+                    Notification.video_id == video_id,
+                    Notification.kind == "video_like",
+                )
+            )
+        assert like_notification_count == 1
 
         root = client.post(
             f"/api/v1/videos/{video_id}/comments",
