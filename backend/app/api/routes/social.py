@@ -111,9 +111,7 @@ def record_view(
     try:
         if is_new_view:
             db.execute(
-                update(Video)
-                .where(Video.id == video_id)
-                .values(view_count=Video.view_count + 1)
+                update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1)
             )
         if user is not None:
             history = db.get(VideoViewHistory, (user.id, video_id))
