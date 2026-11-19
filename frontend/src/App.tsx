@@ -964,7 +964,7 @@ export default function App() {
                       </div>
                       <div className="video-card-info">
                         <div className="channel-avatar">{video.title.slice(0, 1).toUpperCase()}</div>
-                        <div><h2>{video.title}</h2><p>{video.visibility === "public" ? "Открытый доступ" : video.visibility === "unlisted" ? "Доступ по ссылке" : "Приватное"}</p><p>{formatSize(video.file_size_bytes ?? 0)}</p></div>
+                        <div><h2>{video.title}</h2><p>{video.status === "blocked" ? "Скрыто модерацией" : video.visibility === "public" ? "Открытый доступ" : video.visibility === "unlisted" ? "Доступ по ссылке" : "Приватное"}</p><p>{formatSize(video.file_size_bytes ?? 0)}</p></div>
                       </div>
                     </button>
                     <div className="video-actions">
