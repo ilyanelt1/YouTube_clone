@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from io import BytesIO
+from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -9,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import Role
+from app.models import Role, Video
 
 VALID_MP4 = b"\x00\x00\x00\x18ftypisomvideo-data"
 VALID_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
@@ -196,6 +197,17 @@ def test_owner_can_update_and_delete_video(monkeypatch) -> None:
         assert updated.json()["title"] == "Updated title"
         assert updated.json()["visibility"] == "unlisted"
         assert client.get("/api/v1/videos").json()["total"] == 0
+
+        with Session(engine) as db:
+            published_at = db.get(Video, UUID(response.json()["id"])).published_at
+        unchanged_visibility = client.patch(
+            f"/api/v1/videos/{response.json()['id']}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"visibility": "unlisted"},
+        )
+        assert unchanged_visibility.status_code == 200
+        with Session(engine) as db:
+            assert db.get(Video, UUID(response.json()["id"])).published_at == published_at
 
         deleted = client.delete(
             f"/api/v1/videos/{video_id}",
