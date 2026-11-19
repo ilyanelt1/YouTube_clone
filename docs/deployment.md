@@ -1,6 +1,6 @@
 # Production deployment
 
-Инструкция рассчитана на один Ubuntu-сервер с публичным IPv4-адресом и доменом. Production-стек отделён от локального `docker-compose.yml`: он использует Caddy для HTTPS, не публикует PostgreSQL, Redis, MinIO и backend в интернет. PostgreSQL и S3-объекты хранятся в Docker volumes; Redis используется как временный in-memory cache без сохранения на диск.
+Инструкция рассчитана на один Ubuntu-сервер с публичным IPv4-адресом и доменом. Production-стек отделён от локального `docker-compose.yml`: он использует Caddy для HTTPS, не публикует PostgreSQL, Redis, MinIO-compatible object storage и backend в интернет. PostgreSQL и S3-объекты хранятся в Docker volumes; Redis используется как временный in-memory store без сохранения на диск.
 
 ## 1. Подготовьте сервер и DNS
 
@@ -41,22 +41,31 @@ docker compose --env-file .env.production -f docker-compose.production.yml up --
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.production.yml ps
-docker compose --env-file .env.production -f docker-compose.production.yml logs -f caddy backend
+docker compose --env-file .env.production -f docker-compose.production.yml logs -f caddy backend migrate
 ```
 
 После того как DNS обновится, откройте `https://ВАШ_ДОМЕН`. Caddy автоматически запросит и обновит TLS-сертификат. Для выпуска сертификата домен должен указывать на этот сервер, а входящие TCP-порты 80 и 443 должны быть доступны извне.
+
+Проверить liveness и readiness изнутри backend-контейнера:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.production.yml exec backend python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
+docker compose --env-file .env.production -f docker-compose.production.yml exec backend python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/ready').read().decode())"
+```
 
 ## 4. Что запускается
 
 - Caddy — единственная точка входа с опубликованными портами 80/443; автоматически завершает HTTPS и проксирует запросы на frontend.
 - Frontend — Nginx со статикой и проксированием `/api/` к backend.
 - Backend — FastAPI; в production refresh-cookie получает флаг `Secure`.
-- Migrate — применяет Alembic-миграции и должен завершиться успешно до запуска backend.
-- PostgreSQL, Redis и S3-хранилище доступны только во внутренней Docker-сети.
-- Redis хранит временные ключи дедупликации просмотров с TTL 30 минут. Данные Redis не сохраняются на диск и очищаются после перезапуска контейнера; отдельный volume для Redis не подключён.
+- Migrate — одноразовый сервис Alembic. Он ждёт PostgreSQL и должен завершиться успешно до запуска backend.
+- PostgreSQL, Redis, backend и S3-compatible object storage доступны только во внутренней Docker-сети.
+- Backend healthcheck обращается к `/ready`; этот endpoint выполняет `SELECT 1` в PostgreSQL. `/health` — отдельная liveness-проверка процесса.
+- Redis хранит временные ключи дедупликации просмотров с TTL 30 минут. Данные Redis не сохраняются на диск и очищаются после перезапуска контейнера; отдельный volume для Redis не подключён. Redis не входит в readiness, так как при его сбое API считает просмотры без дедупликации.
 - PostgreSQL, S3-объекты и данные Caddy хранятся в именованных Docker volumes.
+- Загрузка видео выполняется синхронно через API. Нет worker, очереди задач, FFmpeg или автоматического транскодирования.
 
-Bucket `youtube-videos` создаётся backend автоматически при первом обращении к хранилищу. Скрипт не импортирует и не переносит старые данные MinIO.
+Bucket `youtube-videos` создаётся backend автоматически при первом обращении к хранилищу. Скрипт не импортирует и не переносит старые данные object storage.
 
 ## 5. Создайте администратора
 
@@ -90,12 +99,20 @@ docker compose --env-file .env.production -f docker-compose.production.yml exec 
 Перед обновлением сделайте резервную копию PostgreSQL и объектов. Затем получите новую версию кода и пересоберите сервисы:
 
 ```bash
-git pull
+git pull origin main
 docker compose --env-file .env.production -f docker-compose.production.yml up --build -d
 ```
 
 Проверьте состояние контейнеров, логи миграций и открытие видео после обновления.
 
+## 8. Ресурсы и размер демо-каталога
+
+В Compose заданы небольшие лимиты памяти для постоянно работающих контейнеров: PostgreSQL 160 МиБ, object storage 96 МиБ, Redis 24 МиБ, backend 128 МиБ, frontend 24 МиБ и Caddy 32 МиБ — суммарно 464 МиБ. Одноразовый контейнер миграций имеет лимит 48 МиБ на время запуска. Суммарный CPU limit постоянно работающих сервисов — около 0.22 CPU.
+
+Это лимиты контейнеров, а не рекомендуемый объём физической памяти VPS: операционной системе, Docker daemon и прочим процессам нужен дополнительный запас. На диске отдельно должны помещаться Docker images, PostgreSQL volume, MinIO data и резервные копии. Compose не задаёт лимит объёма MinIO volume.
+
+Для первого наполнения используй 5–7 коротких роликов примерно на 150–250 МБ суммарно, преимущественно MP4/WebM 720p или 1080p. Не бери 4K и не загружай сразу сотни роликов: проект не сжимает и не транскодирует файлы, а отдаёт загруженный оригинал. Подборка открытых короткометражек и требования к атрибуции описаны в [demo-media.md](demo-media.md).
+
 ## Ограничения этой конфигурации
 
-Это одноузловой production baseline для MVP, а не отказоустойчивая инфраструктура: один сервер, один экземпляр сервисов, локальные Docker volumes. До серьёзной публичной нагрузки дополнительно настройте off-site backup и тест восстановления, мониторинг/оповещения, обновление и фиксацию образов по digest, ротацию секретов и ограничение частоты запросов. Фоновое транскодирование и обработка видео в проекте не добавляются.
+Это одноузловой production baseline для MVP, а не отказоустойчивая инфраструктура: один сервер, один экземпляр сервисов, локальные Docker volumes. До серьёзной публичной нагрузки дополнительно настройте off-site backup и тест восстановления, мониторинг/оповещения, обновление и фиксацию образов по digest, ротацию секретов и ограничение частоты запросов. Rate limiting и CSRF/origin-защита пока не реализованы. Фоновое транскодирование и обработка видео в проекте не добавляются.

@@ -2,4 +2,4 @@
 description: Security requirements
 alwaysApply: true
 ---
-Never commit secrets. Hash passwords with Argon2. Enforce authorization server-side. Keep private media in private buckets and authorize before issuing short-lived signed URLs. Validate upload size and actual media format. Never log passwords, tokens or signed URLs.
+Never commit secrets. Hash passwords with Argon2id. Enforce authorization server-side for every protected operation, including private video metadata, playback and thumbnails. Object storage must not be publicly exposed in production; playback is streamed through the backend after access checks (the current app does not issue signed URLs). Validate upload size, MIME type and file signatures. Generate storage keys server-side. Never log passwords, access tokens, refresh tokens or storage credentials. Do not assume rate limiting or CSRF/origin protections are implemented; these remain pre-public-launch hardening tasks.
