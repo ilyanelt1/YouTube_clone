@@ -26,9 +26,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 beforeEach(() => {
-  setAccessToken(null);
-  vi.stubGlobal("navigator", { locks: createLockManager() });
   vi.unstubAllGlobals();
+  setAccessToken(null);
   vi.stubGlobal("navigator", { locks: createLockManager() });
 });
 
