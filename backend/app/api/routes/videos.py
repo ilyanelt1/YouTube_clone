@@ -310,9 +310,7 @@ def update_video(
         new_visibility = changes["visibility"]
         if new_visibility != video.visibility:
             video.visibility = new_visibility
-            video.published_at = (
-                datetime.now(UTC) if new_visibility != "private" else None
-            )
+            video.published_at = datetime.now(UTC) if new_visibility != "private" else None
 
     db.commit()
     db.refresh(video)
