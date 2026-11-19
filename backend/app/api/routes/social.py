@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from typing import Annotated, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -21,6 +21,7 @@ from app.models import (
     VideoShare,
     VideoViewHistory,
 )
+from app.services.ephemeral_store import claim_video_view
 from app.services.video_access import get_accessible_video
 
 router = APIRouter(tags=["social"])
@@ -67,11 +68,23 @@ def serialize_comment(comment: Comment) -> CommentRead:
 @router.post("/videos/{video_id}/view")
 def record_view(
     video_id: UUID,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
     get_accessible_video(db, video_id, user)
-    db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
+    if user is not None:
+        viewer_identity = f"user:{user.id}"
+    else:
+        client_ip = request.client.host if request.client is not None else None
+        user_agent = request.headers.get("user-agent", "")
+        viewer_identity = (
+            f"anonymous:{client_ip}:{user_agent}" if client_ip else f"anonymous:{uuid4()}"
+        )
+
+    if claim_video_view(video_id, viewer_identity):
+        db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
+
     if user is not None:
         history = db.get(VideoViewHistory, (user.id, video_id))
         if history is None:
