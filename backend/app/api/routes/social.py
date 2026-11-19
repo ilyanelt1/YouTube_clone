@@ -9,13 +9,6 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
-from app.services.view_deduplication import (
-    ViewStoreUnavailable,
-    get_redis_client,
-    make_view_key,
-    mark_view_once,
-    release_view_key,
-)
 from app.models import (
     Channel,
     ChannelSubscription,
@@ -28,6 +21,13 @@ from app.models import (
     VideoRepost,
     VideoShare,
     VideoViewHistory,
+)
+from app.services.view_deduplication import (
+    ViewStoreUnavailable,
+    get_redis_client,
+    make_view_key,
+    mark_view_once,
+    release_view_key,
 )
 
 router = APIRouter(tags=["social"])
