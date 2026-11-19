@@ -23,13 +23,13 @@ from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
 from app.models import Channel, ChannelSubscription, Notification, User, Video, VideoAccessGrant
 from app.schemas.video import VideoList, VideoRead, VideoUpdate
-from app.services.video_access import get_accessible_video
 from app.services.storage import (
     delete_object,
     get_video_object,
     upload_thumbnail,
     upload_video,
 )
+from app.services.video_access import get_accessible_video
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 ALLOWED_VIDEO_TYPES = {
@@ -432,7 +432,7 @@ def get_thumbnail(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> StreamingResponse:
-    video = get_accessible_video(video_id, db, current_user)
+    video = get_accessible_video(db, video_id, current_user)
     if not video.thumbnail_key:
         raise HTTPException(status_code=404, detail="Thumbnail not found")
     try:
@@ -451,7 +451,7 @@ def get_video(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> VideoRead:
-    return _video_read(get_accessible_video(video_id, db, current_user))
+    return _video_read(get_accessible_video(db, video_id, current_user))
 
 
 @router.get("/{video_id}/play")
@@ -461,7 +461,7 @@ def play_video(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> StreamingResponse:
-    video = get_accessible_video(video_id, db, current_user)
+    video = get_accessible_video(db, video_id, current_user)
     if not video.storage_key:
         raise HTTPException(status_code=404, detail="Video not found")
 
