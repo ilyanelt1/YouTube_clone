@@ -167,15 +167,26 @@ def set_reaction(
     if payload.reaction == "like" and previous_reaction != "like":
         video = get_accessible_video(db, video_id, user)
         if video.channel.owner_id != user.id:
-            db.add(
-                Notification(
-                    recipient_id=video.channel.owner_id,
-                    actor_id=user.id,
-                    video_id=video_id,
-                    kind="video_like",
-                    message=f"@{user.username} оценил(а) ваше видео",
+            existing_notification = db.scalar(
+                select(Notification.id)
+                .where(
+                    Notification.recipient_id == video.channel.owner_id,
+                    Notification.actor_id == user.id,
+                    Notification.video_id == video_id,
+                    Notification.kind == "video_like",
                 )
+                .limit(1)
             )
+            if existing_notification is None:
+                db.add(
+                    Notification(
+                        recipient_id=video.channel.owner_id,
+                        actor_id=user.id,
+                        video_id=video_id,
+                        kind="video_like",
+                        message=f"@{user.username} оценил(а) ваше видео",
+                    )
+                )
     db.commit()
     return get_engagement(video_id, db, user)
 
