@@ -21,7 +21,7 @@ from app.models import (
     VideoShare,
     VideoViewHistory,
 )
-from app.services.ephemeral_store import claim_video_view
+from app.services.ephemeral_store import claim_video_view, release_video_view
 from app.services.video_access import get_accessible_video
 
 router = APIRouter(tags=["social"])
@@ -78,22 +78,33 @@ def record_view(
     else:
         client_ip = request.client.host if request.client is not None else None
         user_agent = request.headers.get("user-agent", "")
+        # Without a trustworthy client IP, use a per-request identity rather
+        # than incorrectly merging every anonymous viewer with the same agent.
         viewer_identity = (
             f"anonymous:{client_ip}:{user_agent}" if client_ip else f"anonymous:{uuid4()}"
         )
 
-    if claim_video_view(video_id, viewer_identity):
-        db.execute(
-            update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1)
-        )
+    is_new_view = claim_video_view(video_id, viewer_identity)
+    try:
+        if is_new_view:
+            db.execute(
+                update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1)
+            )
 
-    if user is not None:
-        history = db.get(VideoViewHistory, (user.id, video_id))
-        if history is None:
-            db.add(VideoViewHistory(user_id=user.id, video_id=video_id))
-        else:
-            history.watched_at = datetime.now(UTC)
-    db.commit()
+        if user is not None:
+            history = db.get(VideoViewHistory, (user.id, video_id))
+            if history is None:
+                db.add(VideoViewHistory(user_id=user.id, video_id=video_id))
+            else:
+                history.watched_at = datetime.now(UTC)
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        if is_new_view:
+            release_video_view(video_id, viewer_identity)
+        raise
+
     return {"views": db.scalar(select(Video.view_count).where(Video.id == video_id)) or 0}
 
 
