@@ -15,6 +15,11 @@ x-logging: &default-logging
 
 services:
   db:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.08"
+          memory: 160M
     image: ${POSTGRES_IMAGE:-postgres:17-alpine}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
@@ -33,6 +38,11 @@ services:
     logging: *default-logging
 
   minio:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.04"
+          memory: 96M
     image: ${MINIO_IMAGE:-ghcr.io/seaweedfs/minio-compat:latest}
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -46,17 +56,20 @@ services:
     logging: *default-logging
 
   redis:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.02"
+          memory: 24M
     image: ${REDIS_IMAGE:-redis:7-alpine}
     env_file:
       - .env.production
     command:
       - sh
       - -c
-      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
-    volumes:
-      - redis_data:/data
+      - exec redis-server --save "" --appendonly no --maxmemory 12mb --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD"
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -66,6 +79,11 @@ services:
     logging: *default-logging
 
   migrate:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.03"
+          memory: 48M
     build:
       context: ./backend
     env_file:
@@ -81,11 +99,19 @@ services:
     logging: *default-logging
 
   backend:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 128M
     build:
       context: ./backend
     env_file:
       - .env.production
-    environment: *backend-environment
+    environment:
+      <<: *backend-environment
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      VIEW_DEDUP_TTL_SECONDS: ${VIEW_DEDUP_TTL_SECONDS:-1800}
     depends_on:
       db:
         condition: service_healthy
@@ -111,6 +137,11 @@ services:
     logging: *default-logging
 
   frontend:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.01"
+          memory: 24M
     build:
       context: ./frontend
     depends_on:
@@ -123,6 +154,11 @@ services:
     logging: *default-logging
 
   caddy:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.02"
+          memory: 32M
     image: ${CADDY_IMAGE:-caddy:2-alpine}
     env_file:
       - .env.production
@@ -148,7 +184,6 @@ services:
 volumes:
   postgres_data:
   minio_data:
-  redis_data:
   caddy_data:
   caddy_config:
 

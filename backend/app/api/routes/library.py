@@ -21,7 +21,9 @@ from app.models import (
     VideoAccessGrant,
     VideoViewHistory,
 )
-from app.schemas.video import VideoList, VideoRead
+from app.schemas.video import VideoList
+from app.services.video_access import get_accessible_video
+from app.services.video_serialization import serialize_video as video_read
 
 router = APIRouter(tags=["channels", "library", "notifications"])
 
@@ -36,25 +38,6 @@ class PlaylistUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     visibility: Literal["public", "unlisted", "private"] | None = None
-
-
-def video_read(video: Video) -> VideoRead:
-    if not video.storage_key:
-        raise HTTPException(status_code=404, detail="Video file is unavailable")
-    return VideoRead(
-        id=video.id,
-        title=video.title,
-        description=video.description,
-        status=video.status,
-        visibility=video.visibility,
-        file_size_bytes=video.file_size_bytes,
-        mime_type=video.mime_type,
-        created_at=video.created_at,
-        channel_name=video.channel.name,
-        channel_handle=video.channel.handle,
-        playback_url=f"/api/v1/videos/{video.id}/play",
-        thumbnail_url=f"/api/v1/videos/{video.id}/thumbnail" if video.thumbnail_key else None,
-    )
 
 
 def _video_list(videos: list[Video], total: int) -> VideoList:
@@ -260,9 +243,7 @@ def save_favorite(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    video = db.get(Video, video_id)
-    if video is None or video.status != "ready" or video.visibility == "private":
-        raise HTTPException(status_code=404, detail="Video not found")
+    get_accessible_video(db, video_id, user, allow_private=False)
     if db.get(SavedVideo, (user.id, video_id)) is None:
         db.add(SavedVideo(user_id=user.id, video_id=video_id))
         db.commit()
@@ -389,9 +370,7 @@ def add_playlist_video(
     playlist = db.get(Playlist, playlist_id)
     if playlist is None or playlist.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    video = db.get(Video, video_id)
-    if video is None or video.status != "ready" or video.visibility == "private":
-        raise HTTPException(status_code=404, detail="Video not found")
+    video = get_accessible_video(db, video_id, user, allow_private=False)
     if playlist.visibility != "private" and video.visibility != "public":
         raise HTTPException(
             status_code=400, detail="Only public videos can be added to a public playlist"

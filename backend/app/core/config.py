@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     s3_endpoint_url: str = "http://minio:9000"
     s3_access_key: str = "minioadmin"
     s3_secret_key: SecretStr = SecretStr("change-this-minio-password")
+    redis_url: str = "redis://redis:6379/0"
+    view_dedup_ttl_seconds: int = Field(default=1800, gt=0, le=86400)
 
     @model_validator(mode="after")
     def validate_secret_key(self) -> Settings:

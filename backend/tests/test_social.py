@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from io import BytesIO
+from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -9,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import Role
+from app.models import Notification, Role
 
 VALID_MP4 = b"\x00\x00\x00\x18ftypisomvideo-data"
 
@@ -66,6 +67,16 @@ def upload_public_video(client: TestClient, token: str) -> dict:
 
 
 def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
+    seen_viewers: set[tuple[str, str]] = set()
+
+    def fake_claim_video_view(video_id: UUID, viewer_identity: str) -> bool:
+        key = (str(video_id), viewer_identity)
+        if key in seen_viewers:
+            return False
+        seen_viewers.add(key)
+        return True
+
+    monkeypatch.setattr("app.api.routes.social.claim_video_view", fake_claim_video_view)
     client, engine = make_client()
     try:
         owner_token = register(client, "creator")
@@ -103,6 +114,33 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         )
         assert removed.json()["dislikes"] == 0
         assert removed.json()["viewer_reaction"] is None
+
+        re_liked = client.put(
+            f"/api/v1/videos/{video_id}/reaction",
+            headers=viewer,
+            json={"reaction": "like"},
+        )
+        assert re_liked.status_code == 200
+        client.put(
+            f"/api/v1/videos/{video_id}/reaction",
+            headers=viewer,
+            json={"reaction": None},
+        )
+        client.put(
+            f"/api/v1/videos/{video_id}/reaction",
+            headers=viewer,
+            json={"reaction": "like"},
+        )
+        with Session(engine) as db:
+            like_notification_count = db.scalar(
+                sa.select(sa.func.count())
+                .select_from(Notification)
+                .where(
+                    Notification.video_id == UUID(video_id),
+                    Notification.kind == "video_like",
+                )
+            )
+        assert like_notification_count == 1
 
         root = client.post(
             f"/api/v1/videos/{video_id}/comments",
@@ -161,10 +199,34 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         unsubscribed = client.delete("/api/v1/channels/creator/subscription", headers=viewer)
         assert unsubscribed.json() == {"subscribed": False, "subscribers": 0}
 
+        client.cookies.clear()
+
         first_view = client.post(f"/api/v1/videos/{video_id}/view")
-        second_view = client.post(f"/api/v1/videos/{video_id}/view")
+        repeated_anonymous_view = client.post(f"/api/v1/videos/{video_id}/view")
+        different_anonymous_viewer = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers={"User-Agent": "another-browser"},
+        )
         assert first_view.json()["views"] == 1
-        assert second_view.json()["views"] == 2
+        assert repeated_anonymous_view.json()["views"] == 1
+        assert different_anonymous_viewer.json()["views"] == 2
+
+        first_authenticated_view = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers={**viewer, "User-Agent": "browser-a"},
+        )
+        repeated_authenticated_view = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers={**viewer, "User-Agent": "browser-b"},
+        )
+        assert first_authenticated_view.json()["views"] == 3
+        assert repeated_authenticated_view.json()["views"] == 3
+
+        other_account_view = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers=owner,
+        )
+        assert other_account_view.json()["views"] == 4
 
         deleted = client.delete(f"/api/v1/comments/{root_id}", headers=owner)
         assert deleted.status_code == 204

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { buildVideoShareUrl } from "./lib/shareUrl";
 import {
   api,
   clearAccessToken,
@@ -429,19 +430,24 @@ export default function App() {
     if (!selected) return;
     try {
       if (token) {
-        const result = await api<{ shares: number; share_url: string }>(
+        const result = await api<{ shares: number }>(
           `/videos/${selected.id}/share`, { method: "POST" }, token,
         );
         setEngagement((current) => current ? { ...current, shares: result.shares } : current);
-        if (navigator.share) await navigator.share({ title: selected.title, url: result.share_url });
-        else await navigator.clipboard.writeText(result.share_url);
+      }
+
+      const url = buildVideoShareUrl(window.location.origin, selected.id);
+      if (navigator.share) {
+        await navigator.share({ title: selected.title, url });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
       } else {
-        const url = `${window.location.origin}/?video=${selected.id}`;
-        if (navigator.share) await navigator.share({ title: selected.title, url });
-        else await navigator.clipboard.writeText(url);
+        throw new Error("Sharing is not supported by this browser");
       }
     } catch (err) {
-      if (err instanceof Error && err.name !== "AbortError") setError("Не удалось поделиться видео");
+      if (err instanceof Error && err.name !== "AbortError") {
+        setError("Не удалось поделиться видео");
+      }
     }
   }
 
@@ -958,7 +964,7 @@ export default function App() {
                       </div>
                       <div className="video-card-info">
                         <div className="channel-avatar">{video.title.slice(0, 1).toUpperCase()}</div>
-                        <div><h2>{video.title}</h2><p>{video.visibility === "public" ? "Открытый доступ" : video.visibility === "unlisted" ? "Доступ по ссылке" : "Приватное"}</p><p>{formatSize(video.file_size_bytes ?? 0)}</p></div>
+                        <div><h2>{video.title}</h2><p>{video.status === "blocked" ? "Скрыто модерацией" : video.visibility === "public" ? "Открытый доступ" : video.visibility === "unlisted" ? "Доступ по ссылке" : "Приватное"}</p><p>{formatSize(video.file_size_bytes ?? 0)}</p></div>
                       </div>
                     </button>
                     <div className="video-actions">

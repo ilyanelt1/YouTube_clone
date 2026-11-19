@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from typing import Annotated, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -16,12 +16,13 @@ from app.models import (
     Notification,
     User,
     Video,
-    VideoAccessGrant,
     VideoReaction,
     VideoRepost,
     VideoShare,
     VideoViewHistory,
 )
+from app.services.ephemeral_store import claim_video_view, release_video_view
+from app.services.video_access import get_accessible_video
 
 router = APIRouter(tags=["social"])
 
@@ -51,20 +52,6 @@ class CommentList(BaseModel):
     total: int
 
 
-def accessible_video(video_id: UUID, db: Session, user: User | None) -> Video:
-    video = db.scalar(select(Video).where(Video.id == video_id, Video.status == "ready"))
-    if video is None:
-        raise HTTPException(status_code=404, detail="Video not found")
-    if video.visibility == "private":
-        has_access = user is not None and (
-            video.channel.owner_id == user.id
-            or db.get(VideoAccessGrant, (video.id, user.id)) is not None
-        )
-        if not has_access:
-            raise HTTPException(status_code=404, detail="Video not found")
-    return video
-
-
 def serialize_comment(comment: Comment) -> CommentRead:
     return CommentRead(
         id=comment.id,
@@ -81,18 +68,43 @@ def serialize_comment(comment: Comment) -> CommentRead:
 @router.post("/videos/{video_id}/view")
 def record_view(
     video_id: UUID,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
-    accessible_video(video_id, db, user)
-    db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
+    get_accessible_video(db, video_id, user)
     if user is not None:
-        history = db.get(VideoViewHistory, (user.id, video_id))
-        if history is None:
-            db.add(VideoViewHistory(user_id=user.id, video_id=video_id))
-        else:
-            history.watched_at = datetime.now(UTC)
-    db.commit()
+        viewer_identity = f"user:{user.id}"
+    else:
+        client_ip = request.client.host if request.client is not None else None
+        user_agent = request.headers.get("user-agent", "")
+        # Without a trustworthy client IP, use a per-request identity rather
+        # than incorrectly merging every anonymous viewer with the same agent.
+        viewer_identity = (
+            f"anonymous:{client_ip}:{user_agent}" if client_ip else f"anonymous:{uuid4()}"
+        )
+
+    is_new_view = claim_video_view(video_id, viewer_identity)
+    try:
+        if is_new_view:
+            db.execute(
+                update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1)
+            )
+
+        if user is not None:
+            history = db.get(VideoViewHistory, (user.id, video_id))
+            if history is None:
+                db.add(VideoViewHistory(user_id=user.id, video_id=video_id))
+            else:
+                history.watched_at = datetime.now(UTC)
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        if is_new_view:
+            release_video_view(video_id, viewer_identity)
+        raise
+
     return {"views": db.scalar(select(Video.view_count).where(Video.id == video_id)) or 0}
 
 
@@ -102,7 +114,7 @@ def get_engagement(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
-    accessible_video(video_id, db, user)
+    get_accessible_video(db, video_id, user)
     likes = (
         db.scalar(
             select(func.count())
@@ -152,7 +164,7 @@ def get_engagement(
         "shares": shares,
         "reposts": reposts,
         "viewer_reposted": viewer_reposted,
-        "views": accessible_video(video_id, db, user).view_count,
+        "views": get_accessible_video(db, video_id, user).view_count,
         "viewer_reaction": viewer_reaction,
     }
 
@@ -164,7 +176,7 @@ def set_reaction(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    accessible_video(video_id, db, user)
+    get_accessible_video(db, video_id, user)
     reaction = db.scalar(
         select(VideoReaction).where(
             VideoReaction.video_id == video_id, VideoReaction.user_id == user.id
@@ -179,17 +191,28 @@ def set_reaction(
     else:
         reaction.reaction = payload.reaction
     if payload.reaction == "like" and previous_reaction != "like":
-        video = accessible_video(video_id, db, user)
+        video = get_accessible_video(db, video_id, user)
         if video.channel.owner_id != user.id:
-            db.add(
-                Notification(
-                    recipient_id=video.channel.owner_id,
-                    actor_id=user.id,
-                    video_id=video_id,
-                    kind="video_like",
-                    message=f"@{user.username} оценил(а) ваше видео",
+            existing_notification = db.scalar(
+                select(Notification.id)
+                .where(
+                    Notification.recipient_id == video.channel.owner_id,
+                    Notification.actor_id == user.id,
+                    Notification.video_id == video_id,
+                    Notification.kind == "video_like",
                 )
+                .limit(1)
             )
+            if existing_notification is None:
+                db.add(
+                    Notification(
+                        recipient_id=video.channel.owner_id,
+                        actor_id=user.id,
+                        video_id=video_id,
+                        kind="video_like",
+                        message=f"@{user.username} оценил(а) ваше видео",
+                    )
+                )
     db.commit()
     return get_engagement(video_id, db, user)
 
@@ -202,7 +225,7 @@ def list_comments(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> CommentList:
-    accessible_video(video_id, db, user)
+    get_accessible_video(db, video_id, user)
     base = select(Comment).where(Comment.video_id == video_id).order_by(Comment.created_at.asc())
     total = db.scalar(select(func.count(Comment.id)).where(Comment.video_id == video_id)) or 0
     items = db.scalars(base.offset(offset).limit(limit)).all()
@@ -216,7 +239,7 @@ def add_comment(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> CommentRead:
-    accessible_video(video_id, db, user)
+    get_accessible_video(db, video_id, user)
     body = payload.body.strip()
     if not body:
         raise HTTPException(status_code=422, detail="Comment cannot be empty")
@@ -241,7 +264,7 @@ def add_comment(
                 )
             )
     else:
-        video = accessible_video(video_id, db, user)
+        video = get_accessible_video(db, video_id, user)
         owner_id = video.channel.owner_id
         if owner_id != user.id:
             db.add(
@@ -303,7 +326,7 @@ def share_video(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    accessible_video(video_id, db, user)
+    get_accessible_video(db, video_id, user)
     existing = db.get(VideoShare, (video_id, user.id))
     if existing is None:
         db.add(VideoShare(video_id=video_id, user_id=user.id))
@@ -323,7 +346,7 @@ def repost_video(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    accessible_video(video_id, db, user)
+    get_accessible_video(db, video_id, user)
     if db.get(VideoRepost, (video_id, user.id)) is None:
         db.add(VideoRepost(video_id=video_id, user_id=user.id))
         db.commit()
@@ -336,7 +359,7 @@ def undo_repost(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    accessible_video(video_id, db, user)
+    get_accessible_video(db, video_id, user)
     repost = db.get(VideoRepost, (video_id, user.id))
     if repost is not None:
         db.delete(repost)
