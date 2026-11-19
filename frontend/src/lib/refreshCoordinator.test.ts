@@ -40,6 +40,7 @@ describe("createRefreshCoordinator", () => {
 
     const first = coordinator();
     const second = coordinator();
+    await Promise.resolve();
 
     expect(refresh).toHaveBeenCalledTimes(1);
     finishRefresh("fresh-access-token");
