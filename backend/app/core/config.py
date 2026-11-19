@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     database_url: str = "postgresql+psycopg://youtube:change-me@db:5432/youtube"
+    redis_url: str = "redis://redis:6379/0"
     secret_key: SecretStr = SecretStr("local-development-only-change-this-secret")
     access_token_expire_minutes: int = Field(default=15, gt=0, le=60)
     refresh_token_expire_days: int = Field(default=30, gt=0, le=365)
