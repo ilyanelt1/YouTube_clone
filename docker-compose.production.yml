@@ -16,6 +16,16 @@ x-logging: &default-logging
 services:
   db:
     image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - max_connections=20
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
@@ -23,10 +33,17 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 12
+    cpus: "0.06"
+    mem_limit: 128m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.06"
+          memory: 128M
     restart: unless-stopped
     networks:
       - private
@@ -40,6 +57,13 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
     volumes:
       - minio_data:/data
+    cpus: "0.04"
+    mem_limit: 96m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.04"
+          memory: 96M
     restart: unless-stopped
     networks:
       - private
@@ -52,14 +76,21 @@ services:
     command:
       - sh
       - -c
-      - exec redis-server --appendonly yes --requirepass "$REDIS_PASSWORD"
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 12
+    cpus: "0.01"
+    mem_limit: 16m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.01"
+          memory: 16M
     restart: unless-stopped
     networks:
       - private
@@ -75,6 +106,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    cpus: "0.03"
+    mem_limit: 64m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.03"
+          memory: 64M
     restart: "no"
     networks:
       - private
@@ -105,6 +143,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    cpus: "0.07"
+    mem_limit: 160m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.07"
+          memory: 160M
     restart: unless-stopped
     networks:
       - private
@@ -116,6 +161,13 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    cpus: "0.02"
+    mem_limit: 16m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.02"
+          memory: 16M
     restart: unless-stopped
     networks:
       - edge
@@ -140,6 +192,13 @@ services:
     depends_on:
       frontend:
         condition: service_started
+    cpus: "0.02"
+    mem_limit: 32m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.02"
+          memory: 32M
     restart: unless-stopped
     networks:
       - edge
