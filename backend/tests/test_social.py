@@ -194,6 +194,23 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         )
         assert different_viewer.json()["views"] == 2
 
+        authenticated_view = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers={**viewer, "User-Agent": "viewer-browser-a"},
+        )
+        authenticated_repeat = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers={**viewer, "User-Agent": "viewer-browser-b"},
+        )
+        assert authenticated_view.json()["views"] == 3
+        assert authenticated_repeat.json()["views"] == 3
+
+        other_account_view = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers=owner,
+        )
+        assert other_account_view.json()["views"] == 4
+
         deleted = client.delete(f"/api/v1/comments/{root_id}", headers=owner)
         assert deleted.status_code == 204
         assert client.get(f"/api/v1/videos/{video_id}/comments").json()["total"] == 0
