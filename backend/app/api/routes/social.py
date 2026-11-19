@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
+from app.services.video_access import get_accessible_video as accessible_video
 from app.models import (
     Channel,
     ChannelSubscription,
@@ -16,7 +17,6 @@ from app.models import (
     Notification,
     User,
     Video,
-    VideoAccessGrant,
     VideoReaction,
     VideoRepost,
     VideoShare,
@@ -49,20 +49,6 @@ class CommentRead(BaseModel):
 class CommentList(BaseModel):
     items: list[CommentRead]
     total: int
-
-
-def accessible_video(video_id: UUID, db: Session, user: User | None) -> Video:
-    video = db.scalar(select(Video).where(Video.id == video_id, Video.status == "ready"))
-    if video is None:
-        raise HTTPException(status_code=404, detail="Video not found")
-    if video.visibility == "private":
-        has_access = user is not None and (
-            video.channel.owner_id == user.id
-            or db.get(VideoAccessGrant, (video.id, user.id)) is not None
-        )
-        if not has_access:
-            raise HTTPException(status_code=404, detail="Video not found")
-    return video
 
 
 def serialize_comment(comment: Comment) -> CommentRead:
