@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from io import BytesIO
+from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -125,7 +126,7 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
                 sa.select(sa.func.count())
                 .select_from(Notification)
                 .where(
-                    Notification.video_id == video_id,
+                    Notification.video_id == UUID(video_id),
                     Notification.kind == "video_like",
                 )
             )
