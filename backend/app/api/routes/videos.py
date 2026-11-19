@@ -31,6 +31,8 @@ from app.services.storage import (
 )
 from app.services.video_access import get_accessible_video
 from app.services.video_serialization import serialize_video
+from app.services.video_access import get_accessible_video
+from app.services.video_serialization import serialize_video
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 ALLOWED_VIDEO_TYPES = {
