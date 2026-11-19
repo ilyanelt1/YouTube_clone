@@ -169,9 +169,7 @@ def test_roles_private_video_grants_and_moderation(monkeypatch) -> None:
         assert decision.status_code == 200
         assert decision.json()["video_status"] == "blocked"
         assert client.get(f"/api/v1/videos/{public_video['id']}").status_code == 404
-        assert client.get(
-            "/api/v1/moderation/reports?status=open", headers=moderator
-        ).json() == []
+        assert client.get("/api/v1/moderation/reports?status=open", headers=moderator).json() == []
         resolved_reports = client.get(
             "/api/v1/moderation/reports?status=resolved", headers=moderator
         )
