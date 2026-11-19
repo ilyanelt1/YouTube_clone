@@ -22,6 +22,7 @@ from app.models import (
     VideoViewHistory,
 )
 from app.schemas.video import VideoList, VideoRead
+from app.services.video_access import get_accessible_video
 
 router = APIRouter(tags=["channels", "library", "notifications"])
 
@@ -260,9 +261,7 @@ def save_favorite(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    video = db.get(Video, video_id)
-    if video is None or video.status != "ready" or video.visibility == "private":
-        raise HTTPException(status_code=404, detail="Video not found")
+    video = get_accessible_video(db, video_id, user, allow_private=False)
     if db.get(SavedVideo, (user.id, video_id)) is None:
         db.add(SavedVideo(user_id=user.id, video_id=video_id))
         db.commit()
