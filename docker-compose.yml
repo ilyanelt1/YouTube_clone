@@ -29,7 +29,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -55,6 +55,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      VIEW_DEDUP_TTL_SECONDS: ${VIEW_DEDUP_TTL_SECONDS:-1800}
     ports:
       - "127.0.0.1:8003:8000"
     depends_on:
