@@ -200,9 +200,31 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         assert unsubscribed.json() == {"subscribed": False, "subscribers": 0}
 
         first_view = client.post(f"/api/v1/videos/{video_id}/view")
-        second_view = client.post(f"/api/v1/videos/{video_id}/view")
+        repeated_anonymous_view = client.post(f"/api/v1/videos/{video_id}/view")
+        different_anonymous_viewer = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers={"User-Agent": "another-browser"},
+        )
         assert first_view.json()["views"] == 1
-        assert second_view.json()["views"] == 1
+        assert repeated_anonymous_view.json()["views"] == 1
+        assert different_anonymous_viewer.json()["views"] == 2
+
+        first_authenticated_view = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers={**viewer, "User-Agent": "browser-a"},
+        )
+        repeated_authenticated_view = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers={**viewer, "User-Agent": "browser-b"},
+        )
+        assert first_authenticated_view.json()["views"] == 3
+        assert repeated_authenticated_view.json()["views"] == 3
+
+        other_account_view = client.post(
+            f"/api/v1/videos/{video_id}/view",
+            headers=owner,
+        )
+        assert other_account_view.json()["views"] == 4
 
         deleted = client.delete(f"/api/v1/comments/{root_id}", headers=owner)
         assert deleted.status_code == 204
