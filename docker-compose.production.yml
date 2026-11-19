@@ -15,6 +15,11 @@ x-logging: &default-logging
 
 services:
   db:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.08"
+          memory: 160M
     image: ${POSTGRES_IMAGE:-postgres:17-alpine}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
@@ -33,6 +38,11 @@ services:
     logging: *default-logging
 
   minio:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.04"
+          memory: 96M
     image: ${MINIO_IMAGE:-ghcr.io/seaweedfs/minio-compat:latest}
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -46,6 +56,11 @@ services:
     logging: *default-logging
 
   redis:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.02"
+          memory: 24M
     image: ${REDIS_IMAGE:-redis:7-alpine}
     env_file:
       - .env.production
@@ -66,6 +81,11 @@ services:
     logging: *default-logging
 
   migrate:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.03"
+          memory: 48M
     build:
       context: ./backend
     env_file:
@@ -81,6 +101,11 @@ services:
     logging: *default-logging
 
   backend:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 128M
     build:
       context: ./backend
     env_file:
@@ -111,6 +136,11 @@ services:
     logging: *default-logging
 
   frontend:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.01"
+          memory: 24M
     build:
       context: ./frontend
     depends_on:
@@ -123,6 +153,11 @@ services:
     logging: *default-logging
 
   caddy:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.02"
+          memory: 32M
     image: ${CADDY_IMAGE:-caddy:2-alpine}
     env_file:
       - .env.production
