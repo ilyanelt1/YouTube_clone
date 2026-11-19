@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import {
+  api,
+  clearAccessToken,
+  getAccessToken,
+  refreshSession,
+  setAccessToken,
+  subscribeAccessToken,
+  uploadWithProgress,
+  type AuthResponse,
+} from "./lib/api";
 
 type User = {
   id: string;
@@ -35,59 +45,8 @@ type ModerationReport = { id: string; video_id: string; video_title: string; vid
 type BlockedVideo = { id: string; title: string; channel: string; visibility: string };
 type AccessGrant = { user_id: string; username: string };
 
-type AuthResponse = {
-  access_token: string;
-  user: User;
-};
-
-const API = "/api/v1";
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
 const MAX_THUMBNAIL_SIZE = 5 * 1024 * 1024;
-
-async function api<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  const response = await fetch(`${API}${path}`, {
-    ...options,
-    headers,
-    credentials: "include",
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? `Request failed: ${response.status}`);
-  }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
-}
-
-function uploadWithProgress(
-  form: FormData,
-  token: string,
-  onProgress: (value: number) => void,
-): Promise<Video> {
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open("POST", `${API}/videos/upload`);
-    request.withCredentials = true;
-    request.setRequestHeader("Authorization", `Bearer ${token}`);
-    request.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
-      }
-    };
-    request.onload = () => {
-      const payload = JSON.parse(request.responseText || "{}");
-      if (request.status >= 200 && request.status < 300) {
-        resolve(payload as Video);
-      } else {
-        reject(new Error(payload.detail ?? `Upload failed: ${request.status}`));
-      }
-    };
-    request.onerror = () => reject(new Error("Network error while uploading video"));
-    request.onabort = () => reject(new Error("Upload cancelled"));
-    request.send(form);
-  });
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -106,7 +65,7 @@ export default function App() {
   const [subscriberCount, setSubscriberCount] = useState(0);
   const viewedVideoIds = useRef(new Set<string>());
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const token = useSyncExternalStore(subscribeAccessToken, getAccessToken, () => null);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [showAuth, setShowAuth] = useState(false);
   const [query, setQuery] = useState("");
@@ -137,6 +96,15 @@ export default function App() {
   const [moderationReports, setModerationReports] = useState<ModerationReport[]>([]);
   const [blockedVideos, setBlockedVideos] = useState<BlockedVideo[]>([]);
 
+  useEffect(() => {
+    if (!token) {
+      setUser(null);
+      setMyVideos([]);
+      setSaved(false);
+      setUnreadNotifications(0);
+    }
+  }, [token]);
+
   const loadVideos = useCallback(async (
     search = "",
     sort: "newest" | "oldest" | "popular" = "newest",
@@ -163,9 +131,8 @@ export default function App() {
 
   useEffect(() => {
     void loadVideos();
-    api<AuthResponse>("/auth/refresh", { method: "POST" })
+    refreshSession<User>()
       .then((result) => {
-        setToken(result.access_token);
         setUser(result.user);
         void loadMyVideos(result.access_token).catch(() => undefined);
       })
@@ -496,11 +463,11 @@ export default function App() {
             password: String(data.get("password")),
           };
     try {
-      const result = await api<AuthResponse>(
+      const result = await api<AuthResponse<User>>(
         authMode === "register" ? "/auth/register" : "/auth/login",
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
       );
-      setToken(result.access_token);
+      setAccessToken(result.access_token);
       setUser(result.user);
       setShowAuth(false);
       await loadMyVideos(result.access_token);
@@ -515,7 +482,7 @@ export default function App() {
     try {
       await api<void>("/auth/logout", { method: "POST" });
     } finally {
-      setToken(null);
+      clearAccessToken(true);
       setUser(null);
       setMyVideos([]);
       setUploadOpen(false);
@@ -565,7 +532,7 @@ export default function App() {
     if (selectedDuration !== null) form.set("duration_seconds", String(selectedDuration));
     if (!selectedThumbnail) form.delete("thumbnail");
     try {
-      await uploadWithProgress(form, token, setUploadProgress);
+      await uploadWithProgress<Video>(form, token, setUploadProgress);
       setUploadOpen(false);
       setSelectedFile(null);
       setSelectedDuration(null);
