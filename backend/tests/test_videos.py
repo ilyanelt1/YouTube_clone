@@ -209,8 +209,6 @@ def test_owner_can_update_and_delete_video(monkeypatch) -> None:
         close_client(client, engine)
 
 
-
-
 def test_same_visibility_patch_preserves_published_at(monkeypatch) -> None:
     client, engine = make_client()
     try:
