@@ -238,6 +238,7 @@ def test_same_visibility_patch_preserves_published_at(monkeypatch) -> None:
     finally:
         close_client(client, engine)
 
+
 def test_playback_supports_byte_ranges(monkeypatch) -> None:
     client, engine = make_client()
     try:
