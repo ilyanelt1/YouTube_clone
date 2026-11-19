@@ -83,7 +83,9 @@ def record_view(
         )
 
     if claim_video_view(video_id, viewer_identity):
-        db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
+        db.execute(
+            update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1)
+        )
 
     if user is not None:
         history = db.get(VideoViewHistory, (user.id, video_id))
