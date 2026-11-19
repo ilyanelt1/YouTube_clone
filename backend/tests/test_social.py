@@ -65,7 +65,7 @@ def upload_public_video(client: TestClient, token: str) -> dict:
     return response.json()
 
 
-def test_reactions_comments_shares_and_subscriptions(fake_redis) -> None:
+def test_reactions_comments_shares_and_subscriptions(monkeypatch, fake_redis) -> None:
     client, engine = make_client()
     try:
         owner_token = register(client, "creator")
