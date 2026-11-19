@@ -128,3 +128,7 @@ jobs:
           cp .env.production.example .env.production
           bash -n scripts/init-production-env.sh
           docker compose --env-file .env.production -f docker-compose.production.yml config --quiet
+      - name: Build backend image and verify non-root runtime
+        run: |
+          docker build -t youtube-clone-backend:ci ./backend
+          test "$(docker run --rm youtube-clone-backend:ci id -u)" != "0"
