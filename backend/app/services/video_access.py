@@ -24,9 +24,13 @@ def get_accessible_video(
         raise HTTPException(status_code=404, detail="Video not found")
 
     if video.visibility == "private":
-        has_access = allow_private and user is not None and (
-            video.channel.owner_id == user.id
-            or db.get(VideoAccessGrant, (video.id, user.id)) is not None
+        has_access = (
+            allow_private
+            and user is not None
+            and (
+                video.channel.owner_id == user.id
+                or db.get(VideoAccessGrant, (video.id, user.id)) is not None
+            )
         )
         if not has_access:
             raise HTTPException(status_code=404, detail="Video not found")
