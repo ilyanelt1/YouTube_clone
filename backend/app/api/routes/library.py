@@ -21,7 +21,7 @@ from app.models import (
     VideoAccessGrant,
     VideoViewHistory,
 )
-from app.schemas.video import VideoList, VideoRead
+from app.schemas.video import VideoList
 from app.services.video_access import get_accessible_video
 from app.services.video_serialization import serialize_video as video_read
 
@@ -243,7 +243,7 @@ def save_favorite(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    video = get_accessible_video(db, video_id, user, allow_private=False)
+    get_accessible_video(db, video_id, user, allow_private=False)
     if db.get(SavedVideo, (user.id, video_id)) is None:
         db.add(SavedVideo(user_id=user.id, video_id=video_id))
         db.commit()
