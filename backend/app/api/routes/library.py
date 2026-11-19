@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
@@ -18,10 +18,11 @@ from app.models import (
     SavedVideo,
     User,
     Video,
-    VideoAccessGrant,
     VideoViewHistory,
 )
 from app.schemas.video import VideoList, VideoRead
+
+from app.services.video_access import get_accessible_video, video_access_filter
 
 router = APIRouter(tags=["channels", "library", "notifications"])
 
@@ -185,11 +186,7 @@ def get_watch_history(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> VideoList:
-    access_filter = or_(
-        Video.visibility != "private",
-        Channel.owner_id == user.id,
-        Video.id.in_(select(VideoAccessGrant.video_id).where(VideoAccessGrant.user_id == user.id)),
-    )
+    access_filter = video_access_filter(user)
     history_filters = (
         VideoViewHistory.user_id == user.id,
         Video.status == "ready",
@@ -260,9 +257,7 @@ def save_favorite(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    video = db.get(Video, video_id)
-    if video is None or video.status != "ready" or video.visibility == "private":
-        raise HTTPException(status_code=404, detail="Video not found")
+    get_accessible_video(video_id, db, None)
     if db.get(SavedVideo, (user.id, video_id)) is None:
         db.add(SavedVideo(user_id=user.id, video_id=video_id))
         db.commit()
@@ -389,9 +384,7 @@ def add_playlist_video(
     playlist = db.get(Playlist, playlist_id)
     if playlist is None or playlist.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    video = db.get(Video, video_id)
-    if video is None or video.status != "ready" or video.visibility == "private":
-        raise HTTPException(status_code=404, detail="Video not found")
+    get_accessible_video(video_id, db, None)
     if playlist.visibility != "private" and video.visibility != "public":
         raise HTTPException(
             status_code=400, detail="Only public videos can be added to a public playlist"
