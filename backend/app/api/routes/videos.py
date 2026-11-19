@@ -177,13 +177,13 @@ def list_my_videos(
     statement = (
         select(Video)
         .join(Channel)
-        .where(Channel.owner_id == current_user.id, Video.status == "ready")
+        .where(Channel.owner_id == current_user.id, Video.status.in_(("ready", "blocked")))
         .order_by(Video.created_at.desc())
     )
     count_statement = (
         select(func.count(Video.id))
         .join(Channel)
-        .where(Channel.owner_id == current_user.id, Video.status == "ready")
+        .where(Channel.owner_id == current_user.id, Video.status.in_(("ready", "blocked")))
     )
     videos = db.scalars(statement.offset(offset).limit(limit)).unique().all()
     return VideoList(
