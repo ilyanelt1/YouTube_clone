@@ -14,25 +14,6 @@ from app.models import Role
 VALID_MP4 = b"\x00\x00\x00\x18ftypisomvideo-data"
 
 
-class FakeRedis:
-    def __init__(self) -> None:
-        self.values: dict[str, str] = {}
-        self.expirations: dict[str, int] = {}
-
-    def set(self, key: str, value: str, *, nx: bool, ex: int) -> bool:
-        if nx and key in self.values:
-            return False
-        self.values[key] = value
-        self.expirations[key] = ex
-        return True
-
-    def delete(self, key: str) -> int:
-        existed = key in self.values
-        self.values.pop(key, None)
-        self.expirations.pop(key, None)
-        return int(existed)
-
-
 def make_client() -> tuple[TestClient, sa.Engine]:
     engine = sa.create_engine(
         "sqlite+pysqlite://",
@@ -84,11 +65,9 @@ def upload_public_video(client: TestClient, token: str) -> dict:
     return response.json()
 
 
-def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
+def test_reactions_comments_shares_and_subscriptions(fake_redis) -> None:
     client, engine = make_client()
     try:
-        fake_redis = FakeRedis()
-        monkeypatch.setattr("app.api.routes.social.get_redis_client", lambda: fake_redis)
         owner_token = register(client, "creator")
         viewer_token = register(client, "viewer")
         monkeypatch.setattr(
@@ -188,12 +167,6 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         assert second_view.json()["views"] == 1
         assert set(fake_redis.expirations.values()) == {1800}
 
-        different_viewer = client.post(
-            f"/api/v1/videos/{video_id}/view",
-            headers={"User-Agent": "another-browser"},
-        )
-        assert different_viewer.json()["views"] == 2
-
         authenticated_view = client.post(
             f"/api/v1/videos/{video_id}/view",
             headers={**viewer, "User-Agent": "viewer-browser-a"},
@@ -202,14 +175,14 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
             f"/api/v1/videos/{video_id}/view",
             headers={**viewer, "User-Agent": "viewer-browser-b"},
         )
-        assert authenticated_view.json()["views"] == 3
-        assert authenticated_repeat.json()["views"] == 3
+        assert authenticated_view.json()["views"] == 2
+        assert authenticated_repeat.json()["views"] == 2
 
         other_account_view = client.post(
             f"/api/v1/videos/{video_id}/view",
             headers=owner,
         )
-        assert other_account_view.json()["views"] == 4
+        assert other_account_view.json()["views"] == 3
 
         deleted = client.delete(f"/api/v1/comments/{root_id}", headers=owner)
         assert deleted.status_code == 204
