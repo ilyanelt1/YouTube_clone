@@ -9,6 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
+from app.services.view_deduplication import (
+    ViewStoreUnavailable,
+    get_redis_client,
+    make_view_key,
+    mark_view_once,
+    release_view_key,
+)
 from app.models import (
     Channel,
     ChannelSubscription,
@@ -81,18 +88,46 @@ def serialize_comment(comment: Comment) -> CommentRead:
 @router.post("/videos/{video_id}/view")
 def record_view(
     video_id: UUID,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> dict:
     accessible_video(video_id, db, user)
-    db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
-    if user is not None:
-        history = db.get(VideoViewHistory, (user.id, video_id))
-        if history is None:
-            db.add(VideoViewHistory(user_id=user.id, video_id=video_id))
-        else:
-            history.watched_at = datetime.now(UTC)
-    db.commit()
+    redis_client = get_redis_client()
+    viewer_key = make_view_key(
+        video_id=video_id,
+        user_id=user.id if user is not None else None,
+        client_ip=request.client.host if request.client is not None else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    try:
+        is_new_view = mark_view_once(redis_client, viewer_key)
+    except ViewStoreUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="View tracking is temporarily unavailable",
+        ) from exc
+
+    try:
+        if is_new_view:
+            db.execute(
+                update(Video)
+                .where(Video.id == video_id)
+                .values(view_count=Video.view_count + 1)
+            )
+        if user is not None:
+            history = db.get(VideoViewHistory, (user.id, video_id))
+            if history is None:
+                db.add(VideoViewHistory(user_id=user.id, video_id=video_id))
+            else:
+                history.watched_at = datetime.now(UTC)
+        db.commit()
+    except Exception:
+        db.rollback()
+        if is_new_view:
+            release_view_key(redis_client, viewer_key)
+        raise
+
     return {"views": db.scalar(select(Video.view_count).where(Video.id == video_id)) or 0}
 
 
