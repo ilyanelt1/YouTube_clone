@@ -953,13 +953,21 @@ export default function App() {
               <div className="video-grid">
                 {myVideos.map((video) => (
                   <article className="video-card managed-video" key={video.id}>
-                    <button className="video-card-open" onClick={() => setSelected(video)}>
+                    <button
+                      className="video-card-open"
+                      disabled={video.status === "blocked"}
+                      onClick={() => setSelected(video)}
+                    >
                       <div className="thumbnail">
                         {video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <span className="play-icon">▶</span>}
                       </div>
                       <div className="video-card-info">
                         <div className="channel-avatar">{video.title.slice(0, 1).toUpperCase()}</div>
-                        <div><h2>{video.title}</h2><p>{video.visibility === "public" ? "Открытый доступ" : video.visibility === "unlisted" ? "Доступ по ссылке" : "Приватное"}</p><p>{formatSize(video.file_size_bytes ?? 0)}</p></div>
+                        <div>
+                          <h2>{video.title}</h2>
+                          <p>{video.status === "blocked" ? "Скрыто модерацией" : video.visibility === "public" ? "Открытый доступ" : video.visibility === "unlisted" ? "Доступ по ссылке" : "Приватное"}</p>
+                          <p>{formatSize(video.file_size_bytes ?? 0)}</p>
+                        </div>
                       </div>
                     </button>
                     <div className="video-actions">
