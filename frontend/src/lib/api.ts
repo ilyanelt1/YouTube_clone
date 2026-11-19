@@ -123,9 +123,9 @@ const coordinateRefresh = createRefreshCoordinator(
  * Restores a session on app startup. The shared promise prevents React
  * StrictMode's development effect replay from rotating the cookie twice.
  */
-export async function refreshSession(): Promise<AuthResponse> {
+export async function refreshSession<TUser = unknown>(): Promise<AuthResponse<TUser>> {
   try {
-    return await coordinateRefresh();
+    return (await coordinateRefresh()) as AuthResponse<TUser>;
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       clearAccessToken(true);
