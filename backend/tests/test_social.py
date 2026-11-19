@@ -199,6 +199,8 @@ def test_reactions_comments_shares_and_subscriptions(monkeypatch) -> None:
         unsubscribed = client.delete("/api/v1/channels/creator/subscription", headers=viewer)
         assert unsubscribed.json() == {"subscribed": False, "subscribers": 0}
 
+        client.cookies.clear()
+
         first_view = client.post(f"/api/v1/videos/{video_id}/view")
         repeated_anonymous_view = client.post(f"/api/v1/videos/{video_id}/view")
         different_anonymous_viewer = client.post(
