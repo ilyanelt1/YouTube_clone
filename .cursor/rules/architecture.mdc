@@ -2,4 +2,4 @@
 description: Project architecture constraints
 alwaysApply: true
 ---
-Use a modular monolith for FastAPI and a separate worker for media processing. PostgreSQL stores metadata; MinIO stores media. Keep routes thin and business rules in services. Use Alembic for schema changes. No microservices without an explicit architecture decision.
+The current MVP is a FastAPI modular monolith plus a React SPA. PostgreSQL stores relational metadata; the S3-compatible MinIO service stores original videos and thumbnails; Redis is used only for temporary view-count deduplication with TTL. There is no background worker, Celery queue, FFmpeg pipeline or transcoding in the current scope. Uploads are handled synchronously by the API. Playback is authorized by the API and streamed from object storage through the backend; do not introduce presigned URLs without an explicit architecture decision. Use Alembic for schema changes. Keep new business rules in services where practical and avoid new microservices without an explicit architecture decision.
