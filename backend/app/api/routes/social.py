@@ -21,7 +21,6 @@ from app.models import (
     VideoShare,
     VideoViewHistory,
 )
-
 from app.services.video_access import get_accessible_video
 
 router = APIRouter(tags=["social"])
