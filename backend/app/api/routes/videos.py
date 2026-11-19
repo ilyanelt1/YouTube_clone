@@ -23,13 +23,14 @@ from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
 from app.models import Channel, ChannelSubscription, Notification, User, Video, VideoAccessGrant
 from app.schemas.video import VideoList, VideoRead, VideoUpdate
-from app.services.video_access import get_accessible_video
 from app.services.storage import (
     delete_object,
     get_video_object,
     upload_thumbnail,
     upload_video,
 )
+from app.services.video_access import get_accessible_video
+from app.services.video_serialization import serialize_video
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 ALLOWED_VIDEO_TYPES = {
@@ -117,25 +118,6 @@ def _validate_thumbnail(file: UploadFile) -> tuple[str, str, int]:
     return content_type, extension, size
 
 
-def _video_read(video: Video) -> VideoRead:
-    if not video.storage_key:
-        raise HTTPException(status_code=404, detail="Video file is unavailable")
-    return VideoRead(
-        id=video.id,
-        title=video.title,
-        description=video.description,
-        status=video.status,
-        visibility=video.visibility,
-        file_size_bytes=video.file_size_bytes,
-        mime_type=video.mime_type,
-        created_at=video.created_at,
-        channel_name=video.channel.name,
-        channel_handle=video.channel.handle,
-        playback_url=f"/api/v1/videos/{video.id}/play",
-        thumbnail_url=f"/api/v1/videos/{video.id}/thumbnail" if video.thumbnail_key else None,
-    )
-
-
 def _delete_storage_object(object_key: str | None) -> None:
     if object_key:
         try:
@@ -181,7 +163,7 @@ def list_videos(
         statement = statement.order_by(Video.created_at.desc())
     videos = db.scalars(statement.offset(offset).limit(limit)).unique().all()
     return VideoList(
-        items=[_video_read(video) for video in videos], total=db.scalar(count_statement) or 0
+        items=[serialize_video(video) for video in videos], total=db.scalar(count_statement) or 0
     )
 
 
@@ -205,7 +187,7 @@ def list_my_videos(
     )
     videos = db.scalars(statement.offset(offset).limit(limit)).unique().all()
     return VideoList(
-        items=[_video_read(video) for video in videos], total=db.scalar(count_statement) or 0
+        items=[serialize_video(video) for video in videos], total=db.scalar(count_statement) or 0
     )
 
 
@@ -298,7 +280,7 @@ def upload_video_endpoint(
                 db.commit()
         except Exception:
             db.rollback()
-    return _video_read(video)
+    return serialize_video(video)
 
 
 @router.patch("/{video_id}", response_model=VideoRead)
@@ -333,7 +315,7 @@ def update_video(
 
     db.commit()
     db.refresh(video)
-    return _video_read(video)
+    return serialize_video(video)
 
 
 @router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -450,7 +432,7 @@ def get_video(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> VideoRead:
-    return _video_read(get_accessible_video(video_id, db, current_user))
+    return serialize_video(get_accessible_video(video_id, db, current_user))
 
 
 @router.get("/{video_id}/play")
