@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from io import BytesIO
+from uuid import UUID
 
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -9,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import Role
+from app.models import Role, Video
 
 VALID_MP4 = b"\x00\x00\x00\x18ftypisomvideo-data"
 VALID_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
@@ -207,6 +208,37 @@ def test_owner_can_update_and_delete_video(monkeypatch) -> None:
     finally:
         close_client(client, engine)
 
+
+
+
+def test_same_visibility_patch_preserves_published_at(monkeypatch) -> None:
+    client, engine = make_client()
+    try:
+        token = register_user(client)
+        monkeypatch.setattr(
+            "app.api.routes.videos.upload_video",
+            lambda file_obj, object_key, content_type: None,
+        )
+        uploaded = upload(client, token, visibility="public")
+        assert uploaded.status_code == 201
+        video_id = UUID(uploaded.json()["id"])
+
+        with Session(engine) as db:
+            original_published_at = db.get(Video, video_id).published_at
+
+        response = client.patch(
+            f"/api/v1/videos/{video_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"visibility": "public"},
+        )
+        assert response.status_code == 200
+
+        with Session(engine) as db:
+            updated_published_at = db.get(Video, video_id).published_at
+
+        assert updated_published_at == original_published_at
+    finally:
+        close_client(client, engine)
 
 def test_playback_supports_byte_ranges(monkeypatch) -> None:
     client, engine = make_client()
