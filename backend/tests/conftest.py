@@ -22,7 +22,7 @@ class FakeRedis:
         return int(existed)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def fake_redis(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeRedis]:
     redis = FakeRedis()
     monkeypatch.setattr("app.api.routes.social.get_redis_client", lambda: redis)
