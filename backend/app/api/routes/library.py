@@ -370,9 +370,7 @@ def add_playlist_video(
     playlist = db.get(Playlist, playlist_id)
     if playlist is None or playlist.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    video = db.get(Video, video_id)
-    if video is None or video.status != "ready" or video.visibility == "private":
-        raise HTTPException(status_code=404, detail="Video not found")
+    video = get_accessible_video(db, video_id, user, allow_private=False)
     if playlist.visibility != "private" and video.visibility != "public":
         raise HTTPException(
             status_code=400, detail="Only public videos can be added to a public playlist"
