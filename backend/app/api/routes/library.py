@@ -23,6 +23,7 @@ from app.models import (
 )
 from app.schemas.video import VideoList, VideoRead
 from app.services.video_access import get_accessible_video
+from app.services.video_serialization import serialize_video as video_read
 
 router = APIRouter(tags=["channels", "library", "notifications"])
 
@@ -37,25 +38,6 @@ class PlaylistUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     visibility: Literal["public", "unlisted", "private"] | None = None
-
-
-def video_read(video: Video) -> VideoRead:
-    if not video.storage_key:
-        raise HTTPException(status_code=404, detail="Video file is unavailable")
-    return VideoRead(
-        id=video.id,
-        title=video.title,
-        description=video.description,
-        status=video.status,
-        visibility=video.visibility,
-        file_size_bytes=video.file_size_bytes,
-        mime_type=video.mime_type,
-        created_at=video.created_at,
-        channel_name=video.channel.name,
-        channel_handle=video.channel.handle,
-        playback_url=f"/api/v1/videos/{video.id}/play",
-        thumbnail_url=f"/api/v1/videos/{video.id}/thumbnail" if video.thumbnail_key else None,
-    )
 
 
 def _video_list(videos: list[Video], total: int) -> VideoList:
