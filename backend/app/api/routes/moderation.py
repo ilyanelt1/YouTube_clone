@@ -117,13 +117,23 @@ def decide_report(
         raise HTTPException(status_code=404, detail="Жалоба не найдена")
     if report.status != "open":
         raise HTTPException(status_code=409, detail="Жалоба уже обработана")
+    reviewed_at = datetime.now(UTC)
     if payload.action == "hide":
         report.video.status = "blocked"
-        report.status = "resolved"
+        related_reports = db.scalars(
+            select(VideoReport).where(
+                VideoReport.video_id == report.video_id,
+                VideoReport.status == "open",
+            )
+        ).all()
+        for related_report in related_reports:
+            related_report.status = "resolved"
+            related_report.reviewed_by_id = current_user.id
+            related_report.reviewed_at = reviewed_at
     else:
         report.status = "dismissed"
-    report.reviewed_by_id = current_user.id
-    report.reviewed_at = datetime.now(UTC)
+        report.reviewed_by_id = current_user.id
+        report.reviewed_at = reviewed_at
     db.commit()
     return {"id": str(report.id), "status": report.status, "video_status": report.video.status}
 
