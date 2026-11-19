@@ -52,9 +52,7 @@ services:
     command:
       - sh
       - -c
-      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
-    volumes:
-      - redis_data:/data
+      - exec redis-server --save "" --appendonly no --requirepass "$REDIS_PASSWORD"
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 5s
@@ -148,7 +146,6 @@ services:
 volumes:
   postgres_data:
   minio_data:
-  redis_data:
   caddy_data:
   caddy_config:
 
