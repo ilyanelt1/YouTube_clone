@@ -23,6 +23,7 @@ from app.api.deps import get_current_user, get_optional_current_user
 from app.db.session import get_db
 from app.models import Channel, ChannelSubscription, Notification, User, Video, VideoAccessGrant
 from app.schemas.video import VideoList, VideoRead, VideoUpdate
+from app.services.video_access import get_accessible_video
 from app.services.storage import (
     delete_object,
     get_video_object,
@@ -133,24 +134,6 @@ def _video_read(video: Video) -> VideoRead:
         playback_url=f"/api/v1/videos/{video.id}/play",
         thumbnail_url=f"/api/v1/videos/{video.id}/thumbnail" if video.thumbnail_key else None,
     )
-
-
-def _get_accessible_video(
-    video_id: UUID,
-    db: Session,
-    current_user: User | None,
-) -> Video:
-    video = db.scalar(select(Video).where(Video.id == video_id, Video.status == "ready"))
-    if video is None:
-        raise HTTPException(status_code=404, detail="Video not found")
-    if video.visibility == "private":
-        has_access = current_user is not None and (
-            video.channel.owner_id == current_user.id
-            or db.get(VideoAccessGrant, (video.id, current_user.id)) is not None
-        )
-        if not has_access:
-            raise HTTPException(status_code=404, detail="Video not found")
-    return video
 
 
 def _delete_storage_object(object_key: str | None) -> None:
@@ -445,7 +428,7 @@ def get_thumbnail(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> StreamingResponse:
-    video = _get_accessible_video(video_id, db, current_user)
+    video = get_accessible_video(video_id, db, current_user)
     if not video.thumbnail_key:
         raise HTTPException(status_code=404, detail="Thumbnail not found")
     try:
@@ -464,7 +447,7 @@ def get_video(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> VideoRead:
-    return _video_read(_get_accessible_video(video_id, db, current_user))
+    return _video_read(get_accessible_video(video_id, db, current_user))
 
 
 @router.get("/{video_id}/play")
@@ -474,7 +457,7 @@ def play_video(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> StreamingResponse:
-    video = _get_accessible_video(video_id, db, current_user)
+    video = get_accessible_video(video_id, db, current_user)
     if not video.storage_key:
         raise HTTPException(status_code=404, detail="Video not found")
 
