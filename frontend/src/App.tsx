@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { buildVideoShareUrl } from "./lib/share";
 import {
   api,
   clearAccessToken,
@@ -433,13 +434,13 @@ export default function App() {
           `/videos/${selected.id}/share`, { method: "POST" }, token,
         );
         setEngagement((current) => current ? { ...current, shares: result.shares } : current);
-        if (navigator.share) await navigator.share({ title: selected.title, url: result.share_url });
-        else await navigator.clipboard.writeText(result.share_url);
-      } else {
-        const url = `${window.location.origin}/?video=${selected.id}`;
-        if (navigator.share) await navigator.share({ title: selected.title, url });
-        else await navigator.clipboard.writeText(url);
       }
+
+      // Build the link in the browser: reverse proxies may strip the public port
+      // from the Host header used by the API when it creates share_url.
+      const url = buildVideoShareUrl(window.location.origin, selected.id);
+      if (navigator.share) await navigator.share({ title: selected.title, url });
+      else await navigator.clipboard.writeText(url);
     } catch (err) {
       if (err instanceof Error && err.name !== "AbortError") setError("Не удалось поделиться видео");
     }
