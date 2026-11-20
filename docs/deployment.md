@@ -112,7 +112,7 @@ docker compose --env-file .env.production -f docker-compose.production.yml exec 
 docker compose --env-file .env.production -f docker-compose.production.yml exec backend python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/ready').read().decode())"
 ```
 
-## 4. Что запускается
+## 5. Что запускается
 
 - Системный Nginx Ubuntu — внешняя точка входа на портах 80/443; HTTPS-сертификат обслуживается Certbot/Let's Encrypt на хосте.
 - Frontend — Nginx со статикой и проксированием `/api/` к backend. Контейнер опубликован только на `127.0.0.1:8080`, внешний трафик приходит через системный Nginx.
@@ -130,7 +130,7 @@ Bucket `youtube-videos` создаётся backend автоматически п
 
 **Важно при первом production-запуске:** SeaweedFS MinIO-compatible требует отдельный пустой volume. Не подключайте к нему файловый volume от настоящего MinIO: форматы хранения несовместимы. Если нужно перенести существующие объекты, поднимите старое и новое хранилища с разными volumes и скопируйте данные через S3 API (например, `mc mirror`), затем проверьте количество объектов и чтение файлов до переключения приложения.
 
-## 5. Создайте администратора
+## 6. Создайте администратора
 
 Сначала зарегистрируйте обычный аккаунт через интерфейс. Затем назначьте ему роль из доверенной консоли сервера:
 
@@ -140,7 +140,7 @@ docker compose --env-file .env.production -f docker-compose.production.yml exec 
 
 Не выдавайте административную роль через публичную регистрацию.
 
-## 6. Резервное копирование
+## 7. Резервное копирование
 
 Резервная копия PostgreSQL не содержит видео и обложки из S3-хранилища. Redis — временное хранилище, его данные резервировать не нужно. Сохраняйте базу и volume `minio_data` отдельно, храните копии вне VPS и регулярно проверяйте восстановление.
 
@@ -157,18 +157,18 @@ docker compose --env-file .env.production -f docker-compose.production.yml exec 
 
 Перед резервным копированием файлового volume согласуйте snapshot или остановку сервиса хранилища; не копируйте работающий volume как обычный каталог без согласованного способа snapshot/backup.
 
-## 7. Обновление
+## 8. Обновление
 
 Перед обновлением сделайте резервную копию PostgreSQL и объектов. Затем получите новую версию кода и пересоберите сервисы:
 
 ```bash
 git pull origin main
-docker compose --env-file .env.production -f docker-compose.production.yml up --build -d
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --remove-orphans
 ```
 
 Проверьте состояние контейнеров, логи миграций и открытие видео после обновления.
 
-## 8. Ресурсы и размер демо-каталога
+## 9. Ресурсы и размер демо-каталога
 
 В Compose заданы лимиты памяти для постоянно работающих контейнеров: PostgreSQL 160 МиБ, object storage 96 МиБ, Redis 24 МиБ, backend 128 МиБ и frontend 24 МиБ — суммарно 432 МиБ. Одноразовый контейнер миграций имеет лимит 48 МиБ на время запуска. Суммарный CPU limit постоянно работающих контейнеров — около 0.45 CPU.
 
