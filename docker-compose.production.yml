@@ -159,6 +159,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks:
+      - edge
       - private
     logging: *default-logging
 
@@ -169,3 +170,6 @@ volumes:
 networks:
   private:
     internal: true
+  # Required so Docker can publish frontend's localhost-bound host port.
+  edge:
+    driver: bridge
