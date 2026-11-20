@@ -112,7 +112,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.05"
+          cpus: "0.30"
           memory: 128M
     build:
       context: ./backend
