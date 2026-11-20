@@ -152,48 +152,20 @@ services:
           memory: 24M
     build:
       context: ./frontend
+    ports:
+      - "127.0.0.1:8080:80"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - edge
       - private
-    logging: *default-logging
-
-  caddy:
-    deploy:
-      resources:
-        limits:
-          cpus: "0.02"
-          memory: 32M
-    image: ${CADDY_IMAGE:-caddy:2-alpine}
-    environment:
-      DOMAIN: ${DOMAIN:?Set DOMAIN in .env.production}
-      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env.production}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      frontend:
-        condition: service_started
-    restart: unless-stopped
-    networks:
-      - edge
     logging: *default-logging
 
 volumes:
   postgres_data:
   minio_data:
-  caddy_data:
-  caddy_config:
 
 networks:
-  edge:
   private:
     internal: true

@@ -15,7 +15,7 @@ if ! command -v openssl >/dev/null 2>&1; then
 fi
 
 read -r -p "Домен приложения (например, video.example.com): " DOMAIN
-read -r -p "Email для уведомлений Let's Encrypt: " ACME_EMAIL
+read -r -p "Email для Certbot/Let's Encrypt: " ACME_EMAIL
 
 if [[ ! "$DOMAIN" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
   printf 'Похоже, домен указан некорректно.\n' >&2
@@ -60,7 +60,6 @@ REDIS_PASSWORD=$REDIS_PASSWORD
 REDIS_URL=redis://:$REDIS_PASSWORD@redis:6379/0
 VIEW_DEDUP_TTL_SECONDS=1800
 
-CADDY_IMAGE=caddy:2-alpine
 EOF
 
 chmod 600 "$ENV_FILE"
